@@ -15,14 +15,17 @@ PYTHON=""
 for cmd in python3 python; do
     if command -v "$cmd" &>/dev/null; then
         VER=$("$cmd" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-        MAJOR="${VER%%.*}"; MINOR="${VER##*.}"
+        MAJOR="${VER%%.*}"
+        MINOR="${VER##*.}"
         if [ "$MAJOR" -gt 3 ] || { [ "$MAJOR" -eq 3 ] && [ "$MINOR" -ge 10 ]; }; then
-            PYTHON="$cmd"; break
+            PYTHON="$cmd"
+            break
         fi
     fi
 done
 if [ -z "$PYTHON" ]; then
-    echo "ERROR: Python 3.10+ not found. Install it and retry."; exit 1
+    echo "ERROR: Python 3.10+ not found. Install it and retry."
+    exit 1
 fi
 echo "Using $PYTHON ($VER)"
 
@@ -57,15 +60,24 @@ esac
 # --- install ---
 echo ""
 echo "Installing dependencies..."
-pip install -r requirements_local.txt --extra-index-url "$TORCH_URL"
+if ! pip install -r requirements_local.txt --extra-index-url "$TORCH_URL"; then
+    echo "ERROR: pip install failed."
+    exit 1
+fi
 
 # --- model weights ---
 echo ""
-read -rp "Do you already have tagger_proto.safetensors locally? (y/n): " HAS_WEIGHTS
+read -rp "Do you already have the model weights (.safetensors) locally? (y/n): " HAS_WEIGHTS
 if [[ "$HAS_WEIGHTS" =~ ^[Yy]$ ]]; then
-    read -rp "Path to tagger_proto.safetensors: " CHECKPOINT_PATH
+    read -rp "Path to model weights file: " CHECKPOINT_PATH
+    # strip surrounding quotes the user might have typed
+    CHECKPOINT_PATH="${CHECKPOINT_PATH%\"}"
+    CHECKPOINT_PATH="${CHECKPOINT_PATH#\"}"
+    CHECKPOINT_PATH="${CHECKPOINT_PATH%\'}"
+    CHECKPOINT_PATH="${CHECKPOINT_PATH#\'}"
     if [ ! -f "$CHECKPOINT_PATH" ]; then
-        echo "ERROR: File not found: $CHECKPOINT_PATH"; exit 1
+        echo "ERROR: File not found: $CHECKPOINT_PATH"
+        exit 1
     fi
 else
     CHECKPOINT_PATH="tagger_proto.safetensors"
@@ -76,16 +88,23 @@ else
     elif command -v curl &>/dev/null; then
         curl -L -o "$CHECKPOINT_PATH" "$HF_URL"
     else
-        echo "ERROR: Neither wget nor curl found. Install one and retry."; exit 1
+        echo "ERROR: Neither wget nor curl found. Install one and retry."
+        exit 1
+    fi
+    if [ ! -f "$CHECKPOINT_PATH" ]; then
+        echo "ERROR: Download failed."
+        exit 1
     fi
 fi
 
 # --- write run.sh ---
-cat > run.sh <<EOF
+# Use single-quoted heredoc delimiter so nothing inside is expanded at write time;
+# embed values via concatenation outside the heredoc.
+cat > run.sh << RUNEOF
 #!/usr/bin/env bash
-source "$VENV_DIR/bin/activate"
-python server_local.py --checkpoint "$CHECKPOINT_PATH" --vocab tagger_vocab_with_categories.json --device $DEVICE --port 7860
-EOF
+source "${VENV_DIR}/bin/activate"
+python server_local.py --checkpoint "${CHECKPOINT_PATH}" --vocab tagger_vocab_with_categories.json --device ${DEVICE} --port 7860
+RUNEOF
 chmod +x run.sh
 
 echo ""
