@@ -40,18 +40,18 @@ source "$VENV_DIR/bin/activate"
 # --- torch index URL ---
 echo ""
 echo " Select PyTorch build:"
-echo "  [1] CUDA 12.4  (recommended, RTX 30/40 series)"
-echo "  [2] CUDA 12.1"
-echo "  [3] CUDA 11.8  (older GPUs)"
+echo "  [1] CUDA 13.0  (recommended, RTX 40/50 series)"
+echo "  [2] CUDA 12.8"
+echo "  [3] CUDA 12.6"
 echo "  [4] CPU only"
 echo "  [5] Enter custom URL"
 echo ""
 read -rp "Choice (1-5): " TORCH_CHOICE
 
 case "$TORCH_CHOICE" in
-    1) TORCH_URL="https://download.pytorch.org/whl/cu124"; DEVICE="cuda" ;;
-    2) TORCH_URL="https://download.pytorch.org/whl/cu121"; DEVICE="cuda" ;;
-    3) TORCH_URL="https://download.pytorch.org/whl/cu118"; DEVICE="cuda" ;;
+    1) TORCH_URL="https://download.pytorch.org/whl/cu130"; DEVICE="cuda" ;;
+    2) TORCH_URL="https://download.pytorch.org/whl/cu128"; DEVICE="cuda" ;;
+    3) TORCH_URL="https://download.pytorch.org/whl/cu126"; DEVICE="cuda" ;;
     4) TORCH_URL="https://download.pytorch.org/whl/cpu";   DEVICE="cpu"  ;;
     5) read -rp "Enter extra-index-url: " TORCH_URL; DEVICE="cuda" ;;
     *) echo "Invalid choice."; exit 1 ;;
@@ -59,8 +59,13 @@ esac
 
 # --- install ---
 echo ""
-echo "Installing dependencies..."
-if ! pip install -r requirements_local.txt --extra-index-url "$TORCH_URL"; then
+echo "Installing torch..."
+if ! pip install torch torchvision --extra-index-url "$TORCH_URL"; then
+    echo "ERROR: torch install failed."
+    exit 1
+fi
+echo "Installing remaining dependencies..."
+if ! pip install -r requirements_local.txt; then
     echo "ERROR: pip install failed."
     exit 1
 fi

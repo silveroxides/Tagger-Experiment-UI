@@ -1,8 +1,6 @@
 packaging
 safetensors
 requests
-torch
-torchvision
 python-multipart
 fastapi
 uvicorn

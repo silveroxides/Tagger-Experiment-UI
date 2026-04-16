@@ -45,9 +45,9 @@ call "!VENV_DIR!\Scripts\activate.bat"
 :: --- torch index URL ---
 echo.
 echo  Select PyTorch build:
-echo  [1] CUDA 12.4  (recommended, RTX 30/40 series)
-echo  [2] CUDA 12.1
-echo  [3] CUDA 11.8  (older GPUs)
+echo  [1] CUDA 13.0  (recommended, RTX 40/50 series)
+echo  [2] CUDA 12.8
+echo  [3] CUDA 12.6
 echo  [4] CPU only
 echo  [5] Enter custom URL
 echo.
@@ -55,9 +55,9 @@ set /p TORCH_CHOICE=Choice (1-5):
 
 set TORCH_URL=
 set DEVICE=cuda
-if "!TORCH_CHOICE!"=="1" set TORCH_URL=https://download.pytorch.org/whl/cu124
-if "!TORCH_CHOICE!"=="2" set TORCH_URL=https://download.pytorch.org/whl/cu121
-if "!TORCH_CHOICE!"=="3" set TORCH_URL=https://download.pytorch.org/whl/cu118
+if "!TORCH_CHOICE!"=="1" set TORCH_URL=https://download.pytorch.org/whl/cu130
+if "!TORCH_CHOICE!"=="2" set TORCH_URL=https://download.pytorch.org/whl/cu128
+if "!TORCH_CHOICE!"=="3" set TORCH_URL=https://download.pytorch.org/whl/cu126
 if "!TORCH_CHOICE!"=="4" (
     set TORCH_URL=https://download.pytorch.org/whl/cpu
     set DEVICE=cpu
@@ -72,8 +72,14 @@ if "!TORCH_URL!"=="" (
 
 :: --- install ---
 echo.
-echo Installing dependencies...
-pip install -r requirements_local.txt --extra-index-url !TORCH_URL!
+echo Installing torch...
+pip install torch torchvision --extra-index-url !TORCH_URL!
+if errorlevel 1 (
+    echo ERROR: torch install failed.
+    pause & exit /b 1
+)
+echo Installing remaining dependencies...
+pip install -r requirements_local.txt
 if errorlevel 1 (
     echo ERROR: pip install failed.
     pause & exit /b 1
