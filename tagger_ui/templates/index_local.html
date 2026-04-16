@@ -191,11 +191,17 @@
     .cat-name { flex: 1; }
     .cat-chevron { transition: transform .2s; font-size: .7rem; margin-left: .2rem; }
     .cat-section.collapsed .cat-chevron { transform: rotate(-90deg); }
+    .cat-drag-handle {
+      cursor: grab; font-size: .85rem; opacity: .35; padding: 0 .2rem;
+      user-select: none; flex-shrink: 0;
+    }
+    .cat-drag-handle:hover { opacity: .8; }
+    .cat-section.drag-over { outline: 2px solid var(--accent); border-radius: 8px; }
 
     /* per-category filter controls inside the header */
     .cat-controls {
-      display: flex; align-items: center; gap: .4rem;
-      font-size: .75rem; font-weight: 400;
+      display: flex; align-items: center; gap: .5rem;
+      font-size: .82rem; font-weight: 400;
     }
     .cat-controls .mode-mini {
       display: flex; border-radius: 6px; overflow: hidden;
@@ -203,24 +209,24 @@
     }
     .cat-controls .mode-mini button {
       background: none; border: none; cursor: pointer;
-      font-size: .7rem; padding: .15rem .45rem; color: rgba(255,255,255,.45);
+      font-size: .8rem; padding: .3rem .65rem; color: rgba(255,255,255,.45);
       transition: background .12s, color .12s;
     }
     .cat-controls .mode-mini button.active {
       background: rgba(255,255,255,.18); color: #fff;
     }
     .cat-controls input[type="number"] {
-      width: 52px; background: rgba(0,0,0,.3); border: 1px solid rgba(255,255,255,.15);
-      border-radius: 5px; color: #fff; font-size: .72rem; padding: .15rem .35rem;
+      width: 62px; background: rgba(0,0,0,.3); border: 1px solid rgba(255,255,255,.15);
+      border-radius: 5px; color: #fff; font-size: .82rem; padding: .3rem .4rem;
       text-align: center;
     }
     .cat-controls input[type="range"] {
-      width: 70px; accent-color: currentColor; cursor: pointer;
+      width: 90px; accent-color: currentColor; cursor: pointer;
     }
     .cat-thresh-val { min-width: 2.8ch; }
     .cat-thresh-num {
-      width: 44px; background: rgba(0,0,0,.3); border: 1px solid rgba(255,255,255,.15);
-      border-radius: 5px; color: #fff; font-size: .72rem; padding: .15rem .3rem;
+      width: 56px; background: rgba(0,0,0,.3); border: 1px solid rgba(255,255,255,.15);
+      border-radius: 5px; color: #fff; font-size: .82rem; padding: .3rem .4rem;
       text-align: center;
     }
     .cat-count {
@@ -407,18 +413,12 @@
             <a id="pca-download-custom" download="pca_custom.png" style="display:none"
                class="pca-toggle" title="Download custom PCA">Download</a>
           </div>
-          <!-- colour pickers -->
-          <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin-bottom:.5rem;font-size:.78rem;color:var(--muted)">
-            <label style="display:flex;align-items:center;gap:.35rem">
-              PC1 <input type="color" id="pca-color1" value="#ff0000" title="PC1 colour">
-            </label>
-            <label style="display:flex;align-items:center;gap:.35rem">
-              PC2 <input type="color" id="pca-color2" value="#00ff00" title="PC2 colour">
-            </label>
-            <label style="display:flex;align-items:center;gap:.35rem">
-              PC3 <input type="color" id="pca-color3" value="#0000ff" title="PC3 colour">
-            </label>
-            <button class="pca-toggle" onclick="rerunCustomPca()" title="Re-render with current colours">Apply</button>
+          <!-- colour gradient stops -->
+          <div id="pca-stops" style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-bottom:.5rem;font-size:.78rem;color:var(--muted)"></div>
+          <div style="display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin-bottom:.5rem">
+            <button class="pca-toggle" onclick="pcaAddStop()" title="Add colour stop">+ Stop</button>
+            <button class="pca-toggle" onclick="pcaRemoveStop()" title="Remove last stop">− Stop</button>
+            <button class="pca-toggle" onclick="rerunCustomPca()" title="Re-render">Apply</button>
           </div>
           <img id="pca-img-custom" src="" alt="PCA custom" style="display:none" />
 
@@ -583,6 +583,16 @@
   // ---- rendering ----
 
   let _lastData = null;
+  let _catOrder = null; // persisted array of cat IDs; null = use server order
+
+  function _sortedCategories(categories) {
+    if (!_catOrder) return categories;
+    const map = Object.fromEntries(categories.map(c => [c.id, c]));
+    const ordered = _catOrder.filter(id => id in map).map(id => map[id]);
+    const seen = new Set(_catOrder);
+    categories.forEach(c => { if (!seen.has(c.id)) ordered.push(c); });
+    return ordered;
+  }
 
   function renderResults(data) {
     hideError();
@@ -591,7 +601,7 @@
     const container = document.getElementById('categories');
     container.innerHTML = '';
 
-    for (const cat of data.categories) {
+    for (const cat of _sortedCategories(data.categories)) {
       const meta  = CAT_META[cat.id] || { name: String(cat.id), color: '#6b7280' };
       const color = meta.color;
       const state = getCatState(cat.id);
@@ -607,6 +617,7 @@
       hdr.style.color = color;
 
       hdr.innerHTML = `
+        <span class="cat-drag-handle" title="Drag to reorder">⠿</span>
         <span class="cat-dot" style="background:${color}"></span>
         <span class="cat-name">${meta.name}</span>
 
@@ -670,6 +681,40 @@
         pill.innerHTML = `${t.tag}<span class="score">${(t.score*100).toFixed(0)}%</span>`;
         pillContainer.appendChild(pill);
       }
+
+      // ---- drag-and-drop reordering ----
+      sec.draggable = true;
+      sec.addEventListener('dragstart', e => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', sec.dataset.catId);
+        sec.style.opacity = '.4';
+      });
+      sec.addEventListener('dragend', () => { sec.style.opacity = ''; });
+      sec.addEventListener('dragover', e => {
+        e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+        sec.classList.add('drag-over');
+      });
+      sec.addEventListener('dragleave', () => sec.classList.remove('drag-over'));
+      sec.addEventListener('drop', e => {
+        e.preventDefault(); e.stopPropagation();
+        sec.classList.remove('drag-over');
+        const fromId = parseInt(e.dataTransfer.getData('text/plain'));
+        const toId   = parseInt(sec.dataset.catId);
+        if (fromId === toId) return;
+        const el = container.querySelector(`[data-cat-id="${fromId}"]`);
+        if (!el) return;
+        // insert before or after depending on position
+        const rect = sec.getBoundingClientRect();
+        const mid  = rect.top + rect.height / 2;
+        if (e.clientY < mid) container.insertBefore(el, sec);
+        else sec.after(el);
+        // persist new order
+        _catOrder = [...container.querySelectorAll('.cat-section')]
+          .map(s => parseInt(s.dataset.catId));
+        updateGlobalCopyBar();
+      });
+      // prevent handle drag from collapsing
+      hdr.querySelector('.cat-drag-handle').addEventListener('mousedown', e => e.stopPropagation());
 
       sec.appendChild(hdr);
       sec.appendChild(body);
@@ -891,22 +936,50 @@
     finally { setLoading(false); }
   }
 
+  // ---- PCA colour stops ----
+  const _pcaDefaultStops = ['#0000ff', '#00ff00', '#ff0000'];
+
+  function _pcaRenderStops() {
+    const container = document.getElementById('pca-stops');
+    container.innerHTML = '';
+    _pcaStops.forEach((color, i) => {
+      const lbl = document.createElement('label');
+      lbl.style.cssText = 'display:flex;align-items:center;gap:.25rem;font-size:.75rem;color:var(--muted)';
+      lbl.innerHTML = `<span>${i + 1}</span><input type="color" value="${color}" title="Stop ${i + 1}">`;
+      lbl.querySelector('input').addEventListener('input', e => { _pcaStops[i] = e.target.value; });
+      container.appendChild(lbl);
+    });
+  }
+
+  let _pcaStops = [..._pcaDefaultStops];
+  _pcaRenderStops();
+
+  window.pcaAddStop = function() {
+    _pcaStops.push('#ffffff');
+    _pcaRenderStops();
+  };
+  window.pcaRemoveStop = function() {
+    if (_pcaStops.length > 1) { _pcaStops.pop(); _pcaRenderStops(); }
+  };
+
+  function _pcaColorsParam() {
+    return encodeURIComponent(_pcaStops.join(','));
+  }
+
   window.runPca = async function(req) {
     const spinner = document.getElementById('pca-spinner');
     spinner.style.display = 'block';
     document.getElementById('pca-img-full').style.display = 'none';
     document.getElementById('pca-img-custom').style.display = 'none';
     const maxSize = +document.getElementById('maxsize-input').value;
-    const c1 = encodeURIComponent(document.getElementById('pca-color1').value);
-    const c2 = encodeURIComponent(document.getElementById('pca-color2').value);
-    const c3 = encodeURIComponent(document.getElementById('pca-color3').value);
+    const colors = _pcaColorsParam();
     try {
       let res;
       if (req.type === 'url') {
-        res = await fetch(`/pca/url?url=${encodeURIComponent(req.url)}&max_size=${maxSize}&color1=${c1}&color2=${c2}&color3=${c3}`, { method: 'POST' });
+        res = await fetch(`/pca/url?url=${encodeURIComponent(req.url)}&max_size=${maxSize}&colors=${colors}`, { method: 'POST' });
       } else {
         const fd = new FormData(); fd.append('file', req.file);
-        res = await fetch(`/pca/upload?max_size=${maxSize}&color1=${c1}&color2=${c2}&color3=${c3}`, { method: 'POST', body: fd });
+        res = await fetch(`/pca/upload?max_size=${maxSize}&colors=${colors}`, { method: 'POST', body: fd });
       }
       if (!res.ok) throw new Error(await res.text());
       const pca = await res.json();
@@ -931,16 +1004,14 @@
     spinner.style.display = 'block';
     document.getElementById('pca-img-custom').style.display = 'none';
     const maxSize = +document.getElementById('maxsize-input').value;
-    const c1 = encodeURIComponent(document.getElementById('pca-color1').value);
-    const c2 = encodeURIComponent(document.getElementById('pca-color2').value);
-    const c3 = encodeURIComponent(document.getElementById('pca-color3').value);
+    const colors = _pcaColorsParam();
     try {
       let res;
       if (_lastPcaRequest.type === 'url') {
-        res = await fetch(`/pca/url?url=${encodeURIComponent(_lastPcaRequest.url)}&max_size=${maxSize}&color1=${c1}&color2=${c2}&color3=${c3}`, { method: 'POST' });
+        res = await fetch(`/pca/url?url=${encodeURIComponent(_lastPcaRequest.url)}&max_size=${maxSize}&colors=${colors}`, { method: 'POST' });
       } else {
         const fd = new FormData(); fd.append('file', _lastPcaRequest.file);
-        res = await fetch(`/pca/upload?max_size=${maxSize}&color1=${c1}&color2=${c2}&color3=${c3}`, { method: 'POST', body: fd });
+        res = await fetch(`/pca/upload?max_size=${maxSize}&colors=${colors}`, { method: 'POST', body: fd });
       }
       if (!res.ok) throw new Error(await res.text());
       const pca = await res.json();

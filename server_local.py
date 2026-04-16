@@ -81,9 +81,9 @@ _vocab_path: str = ""
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse(
+        request,
         "index_local.html",
         {
-            "request": request,
             "num_tags": _tagger.num_tags if _tagger else 0,
             "vocab_path": _vocab_path,
             "category_meta": CATEGORY_META,
@@ -134,25 +134,21 @@ async def tag_upload(
 async def pca_url(
     url: str = Query(...),
     max_size: int = Query(default=1024),
-    color1: str = Query(default="#ff0000"),
-    color2: str = Query(default="#00ff00"),
-    color3: str = Query(default="#0000ff"),
+    colors: str = Query(default="#0000ff,#00ff00,#ff0000"),
 ):
     assert _tagger is not None
     try:
         img = _open_image(url)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not fetch image: {e}")
-    return _run_pca(img, max_size, color1, color2, color3)
+    return _run_pca(img, max_size, colors)
 
 
 @app.post("/pca/upload")
 async def pca_upload(
     file: UploadFile = File(...),
     max_size: int = Query(default=1024),
-    color1: str = Query(default="#ff0000"),
-    color2: str = Query(default="#00ff00"),
-    color3: str = Query(default="#0000ff"),
+    colors: str = Query(default="#0000ff,#00ff00,#ff0000"),
 ):
     assert _tagger is not None
     try:
@@ -160,7 +156,7 @@ async def pca_upload(
         img = Image.open(io.BytesIO(data)).convert("RGB")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not read image: {e}")
-    return _run_pca(img, max_size, color1, color2, color3)
+    return _run_pca(img, max_size, colors)
 
 
 # ---------------------------------------------------------------------------
@@ -272,31 +268,34 @@ def _build_custom_pca(
     proj_norm: np.ndarray,
     h_p: int,
     w_p: int,
-    color1: str,
-    color2: str,
-    color3: str,
+    colors: list[str],
 ) -> Image.Image:
-    """Blend the three normalised PC channels using user-chosen colours.
+    """Map PCA patches through a user-defined N-stop colour gradient.
 
-    For each patch: output = PC1_val * color1_rgb
-                           + PC2_val * color2_rgb
-                           + PC3_val * color3_rgb
-    Result is divided by the maximum possible sum so it stays in [0, 1].
-    Upscaled to pixel resolution (NEAREST) matching the full rainbow image.
+    Each patch gets a scalar t = mean(PC1, PC2, PC3) in [0, 1], then
+    t is used to interpolate through the ordered colour stops.
     """
-    c1 = np.array(_hex_to_rgb(color1), dtype=np.float32)
-    c2 = np.array(_hex_to_rgb(color2), dtype=np.float32)
-    c3 = np.array(_hex_to_rgb(color3), dtype=np.float32)
+    stops = np.array([_hex_to_rgb(c) for c in colors], dtype=np.float32)  # [N, 3]
+    n = len(stops)
 
-    blended = (
-        proj_norm[:, 0:1] * c1 + proj_norm[:, 1:2] * c2 + proj_norm[:, 2:3] * c3
-    )  # [N, 3]
+    # scalar per patch: mean of the 3 normalised PC values
+    t = proj_norm.mean(axis=1)  # [P] in [0, 1]
 
-    mx = blended.max()
+    if n == 1:
+        rgb_out = np.tile(stops[0], (len(t), 1))
+    else:
+        # map t into segment index
+        t_scaled = t * (n - 1)  # [P] in [0, n-1]
+        idx_lo = np.floor(t_scaled).astype(int).clip(0, n - 2)
+        idx_hi = idx_lo + 1
+        frac = (t_scaled - idx_lo)[:, None]  # [P, 1]
+        rgb_out = stops[idx_lo] * (1 - frac) + stops[idx_hi] * frac  # [P, 3]
+
+    mx = rgb_out.max()
     if mx > 0:
-        blended /= mx
+        rgb_out /= mx
 
-    rgb = blended.reshape(h_p, w_p, 3)
+    rgb = rgb_out.reshape(h_p, w_p, 3)
     patch_img = Image.fromarray((rgb * 255).clip(0, 255).astype("uint8"), "RGB")
     return patch_img.resize(
         (w_p * PATCH_SIZE, h_p * PATCH_SIZE), resample=Image.NEAREST
@@ -306,22 +305,24 @@ def _build_custom_pca(
 def _run_pca(
     img: Image.Image,
     max_size: int,
-    color1: str,
-    color2: str,
-    color3: str,
+    colors: str,
 ) -> dict:
     """Return {"full": b64_png, "custom": b64_png}."""
+    color_list = [c.strip() for c in colors.split(",") if c.strip()]
+    if not color_list:
+        color_list = ["#0000ff", "#00ff00", "#ff0000"]
+
     pv = _preprocess(img, max_size)
     proj_norm, h_p, w_p = _pca_extract(pv)
 
-    # full rainbow: PC1→R, PC2→G, PC3→B, upscaled to pixel resolution
+    # full rainbow: PC1→R, PC2→G, PC3→B
     rgb_full = proj_norm.reshape(h_p, w_p, 3)
     full_patch = Image.fromarray((rgb_full * 255).clip(0, 255).astype("uint8"), "RGB")
     full_img = full_patch.resize(
         (w_p * PATCH_SIZE, h_p * PATCH_SIZE), resample=Image.NEAREST
     )
 
-    custom_img = _build_custom_pca(proj_norm, h_p, w_p, color1, color2, color3)
+    custom_img = _build_custom_pca(proj_norm, h_p, w_p, color_list)
 
     return {
         "full": _pil_to_base64(full_img),
