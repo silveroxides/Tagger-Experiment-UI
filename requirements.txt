@@ -1,0 +1,11 @@
+packaging
+safetensors
+requests
+torch
+torchvision
+python-multipart
+gradio>=6.10.0
+fastapi
+uvicorn
+jinja2
+aiofiles

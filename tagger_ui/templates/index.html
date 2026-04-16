@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DINOv3 Tagger</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0f0f11;
+      --surface: #1a1a1f;
+      --border:  #2e2e38;
+      --accent:  #7c6af7;
+      --text:    #e2e2e8;
+      --muted:   #6b6b7e;
+      --green:   #4ade80;
+      --radius:  10px;
+    }
+
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', system-ui, sans-serif;
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; padding: 2rem 1rem 4rem;
+    }
+
+    h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -.02em; margin-bottom: .25rem; }
+    h1 span { color: #a78bfa; }
+    .subtitle { color: var(--muted); font-size: .85rem; margin-bottom: 2rem; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.5rem;
+      width: 100%; max-width: 900px;
+    }
+
+    /* ---- input ---- */
+    .input-row { display: flex; gap: .5rem; margin-bottom: 1rem; }
+    .input-row input[type="text"] {
+      flex: 1; background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text); font-size: .9rem;
+      padding: .6rem .9rem; outline: none; transition: border-color .15s;
+    }
+    .input-row input[type="text"]:focus { border-color: var(--accent); }
+    .input-row input[type="text"]::placeholder { color: var(--muted); }
+
+    .btn {
+      background: var(--accent); border: none; border-radius: var(--radius);
+      color: #fff; cursor: pointer; font-size: .9rem; font-weight: 600;
+      padding: .6rem 1.2rem; transition: opacity .15s; white-space: nowrap;
+    }
+    .btn:hover { opacity: .85; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ---- drop zone ---- */
+    #drop-zone {
+      border: 2px dashed var(--border); border-radius: var(--radius);
+      color: var(--muted); cursor: pointer; font-size: .85rem;
+      padding: 1.4rem; text-align: center;
+      transition: border-color .15s, background .15s; margin-bottom: 1rem;
+    }
+    #drop-zone.drag-over { border-color: var(--accent); background: rgba(124,106,247,.06); }
+    #drop-zone input[type="file"] { display: none; }
+
+    /* ---- global options ---- */
+    .options-row {
+      display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+      margin-bottom: 1.2rem; font-size: .85rem; color: var(--muted);
+    }
+    .options-row label { display: flex; align-items: center; gap: .4rem; }
+    .options-row input[type="number"] {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); padding: .3rem .5rem;
+      width: 70px; font-size: .85rem;
+    }
+    .options-row input[type="range"] {
+      width: 120px; accent-color: var(--accent); cursor: pointer;
+    }
+    #global-thresh-val { color: var(--text); min-width: 3.5ch; font-size: .85rem; }
+
+    /* ---- spinner / error ---- */
+    .spinner {
+      display: none; width: 22px; height: 22px;
+      border: 3px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin .7s linear infinite; margin: 1rem auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-msg { color: #f87171; font-size: .85rem; margin-top: .5rem; display: none; }
+
+    /* ---- results ---- */
+    #results-area { display: none; margin-top: 1rem; }
+
+    /* preview — full width on top */
+    .preview-wrap {
+      display: flex; align-items: flex-start; gap: 1rem;
+      margin-bottom: 1.2rem;
+    }
+    .preview-wrap img {
+      border-radius: var(--radius); max-height: 420px;
+      width: 100%; object-fit: contain;
+      border: 1px solid var(--border); display: block;
+    }
+    .img-meta { color: var(--muted); font-size: .72rem; margin-top: .4rem; word-break: break-all; }
+
+    /* global copy bar */
+    .copy-bar { display: flex; align-items: center; gap: .5rem; margin-bottom: 1rem; }
+    .tag-string {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      color: var(--muted); font-size: .78rem; flex: 1; padding: .4rem .6rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      cursor: pointer; transition: border-color .15s;
+    }
+    .tag-string:hover { border-color: var(--accent); color: var(--text); }
+    .copy-btn {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      color: var(--muted); cursor: pointer; font-size: .78rem;
+      padding: .35rem .6rem; transition: border-color .15s, color .15s; white-space: nowrap;
+    }
+    .copy-btn:hover { border-color: var(--accent); color: #a78bfa; }
+    .copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+    /* ---- category sections ---- */
+    .categories { display: flex; flex-direction: column; gap: .8rem; }
+    .cat-section { border-radius: 8px; overflow: hidden; }
+
+    .cat-header {
+      display: flex; align-items: center; gap: .5rem;
+      padding: .45rem .7rem; cursor: pointer; user-select: none;
+      font-size: .8rem; font-weight: 600; letter-spacing: .03em;
+    }
+    .cat-header:hover { filter: brightness(1.1); }
+    .cat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .cat-name { flex: 1; }
+    .cat-chevron { transition: transform .2s; font-size: .7rem; margin-left: .2rem; }
+    .cat-section.collapsed .cat-chevron { transform: rotate(-90deg); }
+
+    /* per-category filter controls inside the header */
+    .cat-controls {
+      display: flex; align-items: center; gap: .4rem;
+      font-size: .75rem; font-weight: 400;
+    }
+    .cat-controls .mode-mini {
+      display: flex; border-radius: 6px; overflow: hidden;
+      border: 1px solid rgba(255,255,255,.15);
+    }
+    .cat-controls .mode-mini button {
+      background: none; border: none; cursor: pointer;
+      font-size: .7rem; padding: .15rem .45rem; color: rgba(255,255,255,.45);
+      transition: background .12s, color .12s;
+    }
+    .cat-controls .mode-mini button.active {
+      background: rgba(255,255,255,.18); color: #fff;
+    }
+    .cat-controls input[type="number"] {
+      width: 52px; background: rgba(0,0,0,.3); border: 1px solid rgba(255,255,255,.15);
+      border-radius: 5px; color: #fff; font-size: .72rem; padding: .15rem .35rem;
+      text-align: center;
+    }
+    .cat-controls input[type="range"] {
+      width: 70px; accent-color: currentColor; cursor: pointer;
+    }
+    .cat-thresh-val { min-width: 2.8ch; }
+    .cat-thresh-num {
+      width: 44px; background: rgba(0,0,0,.3); border: 1px solid rgba(255,255,255,.15);
+      border-radius: 5px; color: #fff; font-size: .72rem; padding: .15rem .3rem;
+      text-align: center;
+    }
+    .cat-count {
+      background: rgba(0,0,0,.25); border-radius: 10px;
+      padding: .1rem .45rem; font-size: .72rem; white-space: nowrap;
+    }
+
+    .cat-body { padding: .5rem .7rem .7rem; }
+    .cat-section.collapsed .cat-body { display: none; }
+
+    /* per-category copy bar */
+    .cat-copy-bar { display: flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+    .cat-tag-string {
+      background: rgba(0,0,0,.2); border: 1px solid rgba(255,255,255,.08);
+      border-radius: 5px; color: rgba(255,255,255,.5); font-size: .72rem;
+      flex: 1; padding: .3rem .5rem; white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; cursor: pointer;
+    }
+    .cat-tag-string:hover { color: rgba(255,255,255,.85); }
+    .cat-copy-btn {
+      background: rgba(0,0,0,.2); border: 1px solid rgba(255,255,255,.1);
+      border-radius: 5px; color: rgba(255,255,255,.4); cursor: pointer;
+      font-size: .72rem; padding: .25rem .5rem; white-space: nowrap;
+      transition: color .15s, border-color .15s;
+    }
+    .cat-copy-btn:hover { color: rgba(255,255,255,.8); }
+    .cat-copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+    /* tag pills */
+    .tag-list { display: flex; flex-wrap: wrap; gap: .35rem; }
+    .tag-pill {
+      display: inline-flex; align-items: center; gap: .3rem;
+      border-radius: 20px; font-size: .76rem; padding: .22rem .6rem;
+      cursor: default; transition: opacity .1s;
+    }
+    .tag-pill:hover { opacity: .8; }
+    .tag-pill .score { font-size: .66rem; opacity: .7; }
+    .tag-pill.hidden { display: none; }
+
+    /* ---- PCA panel ---- */
+    .preview-wrap { flex-wrap: wrap; }
+    .preview-col { flex: 1 1 0; min-width: 0; }
+    .pca-col {
+      flex: 1 1 0; min-width: 0;
+      display: flex; flex-direction: column; gap: .5rem;
+    }
+    .pca-label {
+      font-size: .72rem; color: var(--muted); text-align: center;
+      letter-spacing: .04em; text-transform: uppercase;
+    }
+    #pca-img {
+      border-radius: var(--radius); width: 100%; max-height: 420px;
+      object-fit: contain; border: 1px solid var(--border);
+      display: block; image-rendering: pixelated;
+    }
+    #pca-spinner {
+      display: none; width: 18px; height: 18px; margin: auto;
+      border: 3px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin .7s linear infinite;
+    }
+    .pca-toggle {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--muted); cursor: pointer;
+      font-size: .75rem; padding: .3rem .7rem; align-self: center;
+      transition: border-color .15s, color .15s;
+    }
+    .pca-toggle:hover { border-color: var(--accent); color: var(--text); }
+    .pca-toggle.active { border-color: var(--accent); color: #a78bfa; }
+  </style>
+</head>
+<body>
+
+<h1>DINOv3 <span>Tagger</span></h1>
+<p class="subtitle">ViT-H/16+ · {{ num_tags | format_number }} tags · {{ vocab_path }}</p>
+
+<div class="card">
+
+  <div class="input-row">
+    <input type="text" id="url-input" placeholder="Paste image URL or drop a file below…" />
+    <button class="btn" id="tag-btn" onclick="runFromUrl()">Tag</button>
+  </div>
+
+  <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+    <input type="file" id="file-input" accept="image/*" onchange="runFromFile(this)" />
+    Drop image here or <strong>click to browse</strong>
+  </div>
+
+  <div class="options-row">
+    <label>Max px <input type="number" id="maxsize-input" value="1024" min="64" max="4096" step="16" /></label>
+    <label>
+      Min score
+      <input type="range" id="global-thresh" min="0" max="99" step="1" value="0"
+             oninput="setGlobalThreshold(this.value)" />
+      <input type="number" id="global-thresh-num" min="0" max="99" step="1" value="0"
+             style="width:52px"
+             oninput="setGlobalThreshold(this.value)" />
+      <span id="global-thresh-val" style="display:none">0%</span>
+    </label>
+  </div>
+
+  <div class="spinner" id="spinner"></div>
+  <div class="error-msg" id="error-msg"></div>
+
+  <div id="results-area">
+
+    <!-- image + PCA side by side -->
+    <div class="preview-wrap">
+      <div class="preview-col">
+        <img id="preview-img" src="" alt="preview" />
+        <div class="img-meta" id="img-meta"></div>
+      </div>
+      <div class="pca-col" id="pca-col" style="display:none">
+        <div class="pca-label">PCA · patch features (R=PC1, G=PC2, B=PC3)</div>
+        <div id="pca-spinner"></div>
+        <img id="pca-img" src="" alt="PCA" style="display:none" />
+      </div>
+    </div>
+
+    <!-- PCA toggle -->
+    <div style="display:flex;justify-content:flex-end;margin-bottom:.6rem">
+      <button class="pca-toggle" id="pca-toggle" onclick="togglePca()">Show PCA</button>
+    </div>
+
+    <!-- global copy bar -->
+    <div class="copy-bar">
+      <div class="tag-string" id="tag-string" onclick="copyAll()" title="Click to copy all visible tags"></div>
+      <button class="copy-btn" id="copy-btn-all" onclick="copyAll()">Copy all</button>
+    </div>
+
+    <!-- category sections -->
+    <div class="categories" id="categories"></div>
+
+  </div>
+
+</div>
+
+<script type="module">
+  // ---- @gradio/client ----
+  import { client, handle_file } from "https://cdn.jsdelivr.net/npm/@gradio/client/dist/index.min.js";
+  const gradioApp = await client(location.origin);
+
+  // expose functions called from inline HTML onclick attributes
+  window.runFromUrl    = runFromUrl;
+  window.runFromFile   = runFromFile;
+  window.togglePca     = togglePca;
+  window.setGlobalThreshold = setGlobalThreshold;
+  window.syncCatThreshNum   = syncCatThreshNum;
+  window.syncCatThreshRange = syncCatThreshRange;
+  window.setCatMode    = setCatMode;
+  window.setCatTopk    = setCatTopk;
+  window.setCatThreshold = setCatThreshold;
+  window.copyAll       = copyAll;
+  window.copyCat       = copyCat;
+
+  // ---- category metadata from server ----
+  const CAT_META = {
+    {% for cat_id, meta in category_meta.items() %}
+    {{ cat_id }}: { name: "{{ meta.name }}", color: "{{ meta.color }}" },
+    {% endfor %}
+  };
+
+  // Per-category filter state: { [catId]: { mode: 'topk'|'threshold', topk: int, threshold: float } }
+  const catState = {};
+  let globalFloor = 0.0;  // global minimum score (0–1), applied on top of per-category filters
+
+  function getCatState(catId) {
+    if (!catState[catId]) catState[catId] = { mode: 'threshold', topk: 20, threshold: 0.85 };
+    return catState[catId];
+  }
+
+  function setGlobalThreshold(pct) {
+    const v = Math.max(0, Math.min(99, parseInt(pct) || 0));
+    globalFloor = v / 100;
+    document.getElementById('global-thresh').value = v;
+    document.getElementById('global-thresh-num').value = v;
+    // re-apply filter to every rendered category
+    document.querySelectorAll('.cat-section').forEach(sec => {
+      applyFilter(parseInt(sec.dataset.catId));
+    });
+    updateGlobalCopyBar();
+  }
+
+  function syncCatThreshNum(catId, pct) {
+    const el = document.getElementById(`thnum-${catId}`);
+    if (el) el.value = pct;
+  }
+  function syncCatThreshRange(catId, pct) {
+    const el = document.getElementById(`range-${catId}`);
+    if (el) el.value = Math.max(1, Math.min(99, parseInt(pct) || 1));
+  }
+
+  // ---- PCA state ----
+  let _pcaEnabled = false;
+  let _lastPcaRequest = null;  // { type: 'url'|'file', url?: string, file?: File }
+
+  function togglePca() {
+    _pcaEnabled = !_pcaEnabled;
+    const btn = document.getElementById('pca-toggle');
+    btn.textContent = _pcaEnabled ? 'Hide PCA' : 'Show PCA';
+    btn.classList.toggle('active', _pcaEnabled);
+    document.getElementById('pca-col').style.display = _pcaEnabled ? 'flex' : 'none';
+    if (_pcaEnabled && _lastPcaRequest) runPca(_lastPcaRequest);
+  }
+
+  async function runPca(req) {
+    const spinner = document.getElementById('pca-spinner');
+    const img     = document.getElementById('pca-img');
+    spinner.style.display = 'block';
+    img.style.display = 'none';
+
+    const maxSize = +document.getElementById('maxsize-input').value;
+    try {
+      const imageArg = req.type === 'url'
+        ? req.url
+        : await handle_file(req.file);
+      const res = await gradioApp.predict("/get_pca", { image: imageArg, max_size: maxSize });
+      const b64 = res.data[0];
+      img.src = "data:image/png;base64," + b64;
+      img.style.display = 'block';
+    } catch {
+      img.style.display = 'none';
+    } finally {
+      spinner.style.display = 'none';
+    }
+  }
+
+  // ---- drag & drop ----
+  const dz = document.getElementById('drop-zone');
+  dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) submitFile(file);
+  });
+
+  function runFromFile(input) { if (input.files[0]) submitFile(input.files[0]); }
+
+  async function runFromUrl() {
+    const url = document.getElementById('url-input').value.trim();
+    if (!url) return;
+    setPreview(url, url);
+    _lastPcaRequest = { type: 'url', url };
+    if (_pcaEnabled) runPca(_lastPcaRequest);
+    setLoading(true);
+    try {
+      const res = await gradioApp.predict("/get_tags", {
+        image:    url,
+        max_size: +document.getElementById('maxsize-input').value,
+        floor:    globalFloor,
+      });
+      renderResults(res.data[0]);
+    } catch (err) {
+      showError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function submitFile(file) {
+    const reader = new FileReader();
+    reader.onload = e => setPreview(e.target.result, file.name);
+    reader.readAsDataURL(file);
+    _lastPcaRequest = { type: 'file', file };
+    if (_pcaEnabled) runPca(_lastPcaRequest);
+    setLoading(true);
+    try {
+      const res = await gradioApp.predict("/get_tags", {
+        image:    await handle_file(file),
+        max_size: +document.getElementById('maxsize-input').value,
+        floor:    globalFloor,
+      });
+      renderResults(res.data[0]);
+    } catch (err) {
+      showError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function setPreview(src, label) {
+    document.getElementById('preview-img').src = src;
+    document.getElementById('img-meta').textContent =
+      label.length > 80 ? '…' + label.slice(-77) : label;
+  }
+
+  // ---- rendering ----
+
+  // All tags from the last response, grouped by category
+  let _lastData = null;
+
+  function renderResults(data) {
+    hideError();
+    _lastData = data;
+
+    const container = document.getElementById('categories');
+    container.innerHTML = '';
+
+    for (const cat of data.categories) {
+      const meta  = CAT_META[cat.id] || { name: String(cat.id), color: '#6b7280' };
+      const color = meta.color;
+      const state = getCatState(cat.id);
+
+      const sec = document.createElement('div');
+      sec.className = 'cat-section';
+      sec.dataset.catId = cat.id;
+
+      // ---- header with inline controls ----
+      const hdr = document.createElement('div');
+      hdr.className = 'cat-header';
+      hdr.style.background = color + '22';
+      hdr.style.color = color;
+
+      hdr.innerHTML = `
+        <span class="cat-dot" style="background:${color}"></span>
+        <span class="cat-name">${meta.name}</span>
+
+        <span class="cat-controls" onclick="event.stopPropagation()">
+          <span class="mode-mini">
+            <button id="btn-topk-${cat.id}"
+                    class="${state.mode==='topk'?'active':''}"
+                    onclick="setCatMode(${cat.id},'topk')">top-k</button>
+            <button id="btn-thresh-${cat.id}"
+                    class="${state.mode==='threshold'?'active':''}"
+                    onclick="setCatMode(${cat.id},'threshold')">≥</button>
+          </span>
+
+          <span id="ctrl-topk-${cat.id}" style="display:${state.mode==='topk'?'flex':'none'};align-items:center;gap:.3rem">
+            <input type="number" id="topk-${cat.id}" value="${state.topk}" min="1" max="500"
+                   style="width:52px"
+                   oninput="setCatTopk(${cat.id},this.value)" />
+          </span>
+
+          <span id="ctrl-thresh-${cat.id}" style="display:${state.mode==='threshold'?'flex':'none'};align-items:center;gap:.3rem">
+            <input type="range" id="range-${cat.id}" min="1" max="99" step="1"
+                   value="${Math.round(state.threshold*100)}"
+                   oninput="setCatThreshold(${cat.id},this.value/100);syncCatThreshNum(${cat.id},this.value)" />
+            <input type="number" class="cat-thresh-num" id="thnum-${cat.id}"
+                   min="1" max="99" step="1" value="${Math.round(state.threshold*100)}"
+                   oninput="setCatThreshold(${cat.id},this.value/100);syncCatThreshRange(${cat.id},this.value)" />
+            <span class="cat-thresh-val" style="display:none" id="thval-${cat.id}">${state.threshold.toFixed(2)}</span>
+          </span>
+        </span>
+
+        <span class="cat-count" id="count-${cat.id}">0</span>
+        <span class="cat-chevron">▾</span>
+      `;
+      hdr.addEventListener('click', () => sec.classList.toggle('collapsed'));
+
+      // ---- body ----
+      const body = document.createElement('div');
+      body.className = 'cat-body';
+      body.style.background = color + '0d';
+      body.innerHTML = `
+        <div class="cat-copy-bar">
+          <div class="cat-tag-string" id="cat-copy-${cat.id}"
+               onclick="copyCat(${cat.id})" title="Click to copy"></div>
+          <button class="cat-copy-btn" id="cat-btn-${cat.id}"
+                  onclick="copyCat(${cat.id})">Copy</button>
+        </div>
+        <div class="tag-list" id="cat-tags-${cat.id}"></div>
+      `;
+
+      // build all pills (hidden ones will be toggled by applyFilter)
+      const pillContainer = body.querySelector(`#cat-tags-${cat.id}`);
+      for (const t of cat.tags) {
+        const pill = document.createElement('span');
+        pill.className = 'tag-pill';
+        pill.style.background = color + '1a';
+        pill.style.border = `1px solid ${color}44`;
+        pill.style.color  = color;
+        pill.dataset.score = t.score;
+        pill.dataset.tag   = t.tag;
+        pill.title = `${t.tag}: ${t.score}`;
+        pill.innerHTML = `${t.tag}<span class="score">${(t.score*100).toFixed(0)}%</span>`;
+        pillContainer.appendChild(pill);
+      }
+
+      sec.appendChild(hdr);
+      sec.appendChild(body);
+      container.appendChild(sec);
+
+      applyFilter(cat.id);
+    }
+
+    document.getElementById('results-area').style.display = 'block';
+    updateGlobalCopyBar();
+  }
+
+  // Apply topk or threshold filter to a category's pills
+  function applyFilter(catId) {
+    const state = getCatState(catId);
+    const pills = document.querySelectorAll(`#cat-tags-${catId} .tag-pill`);
+    if (!pills.length) return;
+
+    let visible = 0;
+    pills.forEach((pill, idx) => {
+      const score = parseFloat(pill.dataset.score);
+      let show;
+      if (state.mode === 'topk') {
+        show = idx < state.topk;
+      } else {
+        show = score >= state.threshold;
+      }
+      // global floor is always applied on top
+      if (score < globalFloor) show = false;
+      pill.classList.toggle('hidden', !show);
+      if (show) visible++;
+    });
+
+    // update count badge
+    const countEl = document.getElementById(`count-${catId}`);
+    if (countEl) countEl.textContent = visible;
+
+    // update copy bar text
+    const visibleTags = [...pills]
+      .filter(p => !p.classList.contains('hidden'))
+      .map(p => p.dataset.tag);
+    const copyEl = document.getElementById(`cat-copy-${catId}`);
+    if (copyEl) copyEl.textContent = visibleTags.join(', ');
+  }
+
+  function setCatMode(catId, mode) {
+    const state = getCatState(catId);
+    state.mode = mode;
+    document.getElementById(`btn-topk-${catId}`).classList.toggle('active', mode === 'topk');
+    document.getElementById(`btn-thresh-${catId}`).classList.toggle('active', mode === 'threshold');
+    document.getElementById(`ctrl-topk-${catId}`).style.display   = mode === 'topk'      ? 'flex' : 'none';
+    document.getElementById(`ctrl-thresh-${catId}`).style.display = mode === 'threshold' ? 'flex' : 'none';
+    applyFilter(catId);
+    updateGlobalCopyBar();
+  }
+
+  function setCatTopk(catId, val) {
+    getCatState(catId).topk = Math.max(1, parseInt(val) || 1);
+    applyFilter(catId);
+    updateGlobalCopyBar();
+  }
+
+  function setCatThreshold(catId, val) {
+    const v = parseFloat(val);
+    getCatState(catId).threshold = v;
+    const el = document.getElementById(`thval-${catId}`);
+    if (el) el.textContent = v.toFixed(2);
+    applyFilter(catId);
+    updateGlobalCopyBar();
+  }
+
+  function updateGlobalCopyBar() {
+    // collect all visible tags across all categories, in category order
+    const allVisible = [];
+    document.querySelectorAll('.cat-section').forEach(sec => {
+      sec.querySelectorAll('.tag-pill:not(.hidden)').forEach(p => {
+        allVisible.push(p.dataset.tag);
+      });
+    });
+    document.getElementById('tag-string').textContent = allVisible.join(', ');
+  }
+
+  function copyAll() {
+    const text = document.getElementById('tag-string').textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById('copy-btn-all');
+      btn.textContent = 'Copied!'; btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copy all'; btn.classList.remove('copied'); }, 1800);
+    });
+  }
+
+  function copyCat(catId) {
+    const text = document.getElementById(`cat-copy-${catId}`).textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById(`cat-btn-${catId}`);
+      btn.textContent = 'Copied!'; btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1800);
+    });
+  }
+
+  function setLoading(on) {
+    document.getElementById('spinner').style.display = on ? 'block' : 'none';
+    document.getElementById('tag-btn').disabled = on;
+    if (on) document.getElementById('results-area').style.display = 'none';
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('error-msg');
+    el.textContent = msg; el.style.display = 'block';
+  }
+  function hideError() { document.getElementById('error-msg').style.display = 'none'; }
+
+  document.getElementById('url-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') runFromUrl();
+  });
+</script>
+</body>
+</html>
