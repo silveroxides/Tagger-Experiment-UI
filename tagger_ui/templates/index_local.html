@@ -382,6 +382,10 @@
                  oninput="setGlobalThreshold(this.value)" />
           <span id="global-thresh-val" style="display:none">0%</span>
         </label>
+        <label>
+          <input type="checkbox" id="show-hidden" onchange="toggleShowHidden(this.checked)" />
+          Show hidden
+        </label>
       </div>
 
       <div class="spinner" id="spinner"></div>
@@ -508,6 +512,20 @@
     {{ cat_id }}: { name: "{{ meta.name }}", color: "{{ meta.color }}" },
     {% endfor %}
   };
+
+  // Categories hidden from the UI by default (contributor=3, unassigned=0)
+  const _HIDDEN_CATS = new Set([0, 3]);
+  let _showHidden = false;
+
+  function toggleShowHidden(checked) {
+    _showHidden = checked;
+    // show/hide already-rendered sections
+    document.querySelectorAll('.cat-section').forEach(sec => {
+      const catId = parseInt(sec.dataset.catId);
+      if (_HIDDEN_CATS.has(catId)) sec.style.display = _showHidden ? '' : 'none';
+    });
+    updateGlobalCopyBar();
+  }
 
   // Per-category filter state: { [catId]: { mode: 'topk'|'threshold', topk: int, threshold: float } }
   const catState = {};
@@ -685,6 +703,7 @@
       // ---- drag-and-drop reordering ----
       sec.draggable = true;
       sec.addEventListener('dragstart', e => {
+        if (!e.target.closest('.cat-drag-handle')) { e.preventDefault(); return; }
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', sec.dataset.catId);
         sec.style.opacity = '.4';
@@ -718,6 +737,8 @@
 
       sec.appendChild(hdr);
       sec.appendChild(body);
+      // hide by default if this is a hidden category and show-hidden is off
+      if (_HIDDEN_CATS.has(cat.id) && !_showHidden) sec.style.display = 'none';
       container.appendChild(sec);
 
       applyFilter(cat.id);
@@ -788,8 +809,10 @@
 
   function updateGlobalCopyBar() {
     // collect all visible tags across all categories, in category order
+    // skip hidden categories unless show-hidden is on
     const allVisible = [];
     document.querySelectorAll('.cat-section').forEach(sec => {
+      if (sec.style.display === 'none') return;
       sec.querySelectorAll('.tag-pill:not(.hidden)').forEach(p => {
         allVisible.push(p.dataset.tag);
       });
