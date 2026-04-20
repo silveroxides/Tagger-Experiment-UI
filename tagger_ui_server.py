@@ -42,16 +42,16 @@ from inference_tagger_standalone import (
 _CAT_OFFSET = 1
 
 CATEGORY_META: dict[int, dict] = {
-    0: {"name": "unassigned", "color": "#6b7280"},  # raw -1
-    1: {"name": "general", "color": "#4ade80"},  # raw  0
-    2: {"name": "artist", "color": "#f472b6"},  # raw  1
-    3: {"name": "contributor", "color": "#a78bfa"},  # raw  2
-    4: {"name": "copyright", "color": "#fb923c"},  # raw  3
-    5: {"name": "character", "color": "#60a5fa"},  # raw  4
-    6: {"name": "species/meta", "color": "#facc15"},  # raw  5
-    7: {"name": "disambiguation", "color": "#94a3b8"},  # raw  6
-    8: {"name": "meta", "color": "#e2e8f0"},  # raw  7
-    9: {"name": "lore", "color": "#f87171"},  # raw  8
+    0: {"name": "unassigned",     "color": "#6b7280", "display_order": 9},  # raw -1
+    1: {"name": "general",        "color": "#4ade80", "display_order": 4},  # raw  0
+    2: {"name": "artist",         "color": "#f472b6", "display_order": 0},  # raw  1
+    3: {"name": "contributor",    "color": "#a78bfa", "display_order": 7},  # raw  2
+    4: {"name": "copyright",      "color": "#fb923c", "display_order": 1},  # raw  3
+    5: {"name": "character",      "color": "#60a5fa", "display_order": 2},  # raw  4
+    6: {"name": "species",        "color": "#facc15", "display_order": 3},  # raw  5
+    7: {"name": "disambiguation", "color": "#94a3b8", "display_order": 8},  # raw  6
+    8: {"name": "meta",           "color": "#e2e8f0", "display_order": 6},  # raw  7
+    9: {"name": "lore",           "color": "#f87171", "display_order": 5},  # raw  8
 }
 
 # ---------------------------------------------------------------------------
@@ -219,7 +219,7 @@ def _run_tagger(
         by_category.setdefault(cat, []).append(item)
 
     categories = []
-    for cat_id in sorted(by_category.keys()):
+    for cat_id in sorted(by_category.keys(), key=lambda cid: CATEGORY_META.get(cid, {}).get("display_order", cid)):
         meta = CATEGORY_META.get(cat_id, {"name": str(cat_id), "color": "#6b7280"})
         categories.append(
             {
