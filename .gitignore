@@ -207,3 +207,6 @@ marimo/_lsp/
 __marimo__/
 
 .opencode/
+onnx/
+export_onnx_error.txt
+start-ui.bat
