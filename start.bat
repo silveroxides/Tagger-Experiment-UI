@@ -9,7 +9,13 @@ set VOCAB=tagger_vocab_with_categories.json
 set DEVICE=cuda
 set PORT=7860
 set HOST=0.0.0.0
+:: Set to 1 to enable batch tagging and batch similarity endpoints
+set ENABLE_BATCH=0
 :: ============================================================
 
 call "%VENV_DIR%\Scripts\activate.bat"
-python server_local.py --checkpoint "%CHECKPOINT%" --vocab "%VOCAB%" --device %DEVICE% --host %HOST% --port %PORT%
+
+set BATCH_FLAG=
+if "%ENABLE_BATCH%"=="1" set BATCH_FLAG=--enable-batch
+
+python server_local.py --checkpoint "%CHECKPOINT%" --vocab "%VOCAB%" --device %DEVICE% --host %HOST% --port %PORT% %BATCH_FLAG%

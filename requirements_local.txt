@@ -8,3 +8,5 @@ jinja2
 aiofiles
 pillow
 numpy
+tqdm
+huggingface_hub

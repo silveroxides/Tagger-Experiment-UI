@@ -18,9 +18,12 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import io
 import json
+import zipfile
 from pathlib import Path
+from typing import AsyncIterator, List, Optional
 
 import numpy as np
 import torch
@@ -28,9 +31,10 @@ import torchvision.transforms.v2 as v2
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.requests import Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from PIL import Image
+from tqdm import tqdm
 
 from inference_tagger_standalone import (
     PATCH_SIZE,
@@ -71,6 +75,10 @@ templates.env.filters["format_number"] = lambda v: f"{v:,}"
 _tagger: Tagger | None = None
 _tag2category: dict[str, int] = {}
 _vocab_path: str = ""
+_batch_enabled: bool = False
+
+# Image extensions accepted in batch zip uploads
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tiff", ".tif"}
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +95,7 @@ async def index(request: Request):
             "num_tags": _tagger.num_tags if _tagger else 0,
             "vocab_path": _vocab_path,
             "category_meta": CATEGORY_META,
+            "batch_enabled": _batch_enabled,
         },
     )
 
@@ -194,6 +203,264 @@ async def similarity_upload(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not read image: {e}")
     return _run_similarity(img_a, img_b, max_size)
+
+
+# ---------------------------------------------------------------------------
+# Routes — Batch Tagging  (only registered when --enable-batch)
+# ---------------------------------------------------------------------------
+
+
+def _register_batch_routes() -> None:
+    """Called from main() when --enable-batch is set."""
+
+    @app.post("/tag/batch")
+    async def tag_batch(
+        files: List[UploadFile] = File(default=[]),
+        archive: Optional[UploadFile] = File(default=None),
+        max_size: int = Query(default=1024),
+        floor: float = Query(default=0.05),
+    ):
+        assert _tagger is not None
+
+        # --- collect (raw_bytes, filename, concept) tuples ---
+        items: list[tuple[bytes, str, str | None]] = []
+
+        if archive is not None:
+            raw_zip = await archive.read()
+            try:
+                zf = zipfile.ZipFile(io.BytesIO(raw_zip))
+            except zipfile.BadZipFile as e:
+                raise HTTPException(status_code=400, detail=f"Bad zip: {e}")
+            for entry in zf.infolist():
+                if entry.is_dir():
+                    continue
+                p = Path(entry.filename)
+                # skip macOS metadata
+                if "__MACOSX" in p.parts:
+                    continue
+                if p.suffix.lower() not in _IMAGE_EXTS:
+                    continue
+                concept = str(p.parent) if str(p.parent) not in (".", "") else None
+                items.append((zf.read(entry.filename), p.name, concept))
+        else:
+            for uf in files:
+                data = await uf.read()
+                items.append((data, uf.filename or "unknown", None))
+
+        if not items:
+            raise HTTPException(status_code=400, detail="No images found in request.")
+
+        async def generate() -> AsyncIterator[str]:
+            bar = tqdm(total=len(items), desc="tag/batch", unit="img")
+            for raw, filename, concept in items:
+                img_hash = hashlib.sha256(raw).hexdigest()
+                try:
+                    img = Image.open(io.BytesIO(raw)).convert("RGB")
+                    result = _run_tagger(img, max_size, floor)
+                    line = {
+                        "hash": img_hash,
+                        "filename": filename,
+                        "concept": concept,
+                        "tags": result["tags"],
+                        "count": result["count"],
+                    }
+                except Exception as exc:
+                    line = {
+                        "hash": img_hash,
+                        "filename": filename,
+                        "concept": concept,
+                        "error": str(exc),
+                    }
+                bar.update(1)
+                yield json.dumps(line, ensure_ascii=False) + "\n"
+            bar.close()
+
+        return StreamingResponse(
+            generate(),
+            media_type="application/x-ndjson",
+            headers={"Content-Disposition": 'attachment; filename="tags.jsonl"'},
+        )
+
+    # -----------------------------------------------------------------------
+    # Routes — Batch Similarity  (only registered when --enable-batch)
+    # -----------------------------------------------------------------------
+
+    @app.post("/similarity/batch")
+    async def similarity_batch(
+        archive: Optional[UploadFile] = File(default=None),
+        json_file: Optional[UploadFile] = File(default=None),
+        max_size: int = Query(default=1024),
+    ):
+        assert _tagger is not None
+
+        # --- Build list of (pair_id, file_a_label, file_b_label, img_a, img_b) ---
+        # Each entry: (pair_id: str, label_a: str, label_b: str, img_a: Image, img_b: Image)
+        pairs: list[tuple[str, str, str, Image.Image, Image.Image]] = []
+        warnings: list[str] = []
+
+        if archive is not None:
+            raw_zip = await archive.read()
+            try:
+                zf = zipfile.ZipFile(io.BytesIO(raw_zip))
+            except zipfile.BadZipFile as e:
+                raise HTTPException(status_code=400, detail=f"Bad zip: {e}")
+
+            # find exactly 2 top-level dirs
+            top_dirs: set[str] = set()
+            for entry in zf.infolist():
+                if entry.is_dir():
+                    continue
+                parts = Path(entry.filename).parts
+                if len(parts) >= 2:
+                    top_dirs.add(parts[0])
+            if len(top_dirs) != 2:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Zip must contain exactly 2 top-level directories; found: {sorted(top_dirs) or 'none'}",
+                )
+            dir_a, dir_b = sorted(top_dirs)
+
+            def _zip_images(d: str) -> dict[str, tuple[str, bytes]]:
+                """stem → (full_path, bytes) for all images in directory d."""
+                out: dict[str, tuple[str, bytes]] = {}
+                for entry in zf.infolist():
+                    if entry.is_dir():
+                        continue
+                    p = Path(entry.filename)
+                    if p.parts[0] != d:
+                        continue
+                    if p.suffix.lower() not in _IMAGE_EXTS:
+                        continue
+                    out[p.stem] = (entry.filename, zf.read(entry.filename))
+                return dict(sorted(out.items()))  # alphanumeric sort by stem
+
+            imgs_a = _zip_images(dir_a)
+            imgs_b = _zip_images(dir_b)
+            all_stems = sorted(set(imgs_a) | set(imgs_b))
+
+            for stem in all_stems:
+                if stem not in imgs_a:
+                    warnings.append(f"no match for dir_b file: {imgs_b[stem][0]}")
+                    continue
+                if stem not in imgs_b:
+                    warnings.append(f"no match for dir_a file: {imgs_a[stem][0]}")
+                    continue
+                path_a, raw_a = imgs_a[stem]
+                path_b, raw_b = imgs_b[stem]
+                try:
+                    img_a = Image.open(io.BytesIO(raw_a)).convert("RGB")
+                    img_b = Image.open(io.BytesIO(raw_b)).convert("RGB")
+                    pairs.append((stem, path_a, path_b, img_a, img_b))
+                except Exception as exc:
+                    warnings.append(f"could not decode pair '{stem}': {exc}")
+
+        elif json_file is not None:
+            raw_json = await json_file.read()
+            try:
+                payload = json.loads(raw_json)
+            except json.JSONDecodeError as e:
+                raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+
+            if not isinstance(payload, dict):
+                raise HTTPException(status_code=400, detail="JSON root must be an object.")
+
+            # Detect format
+            if "pairs" in payload:
+                # flat list format: {"pairs": [{"id": ..., "url_a": ..., "url_b": ...}]}
+                pair_list = payload["pairs"]
+                if not isinstance(pair_list, list):
+                    raise HTTPException(status_code=400, detail='"pairs" must be a list.')
+                raw_pairs = [
+                    (str(p.get("id", i)), p.get("url_a", ""), p.get("url_b", ""))
+                    for i, p in enumerate(pair_list)
+                ]
+            else:
+                # parallel dicts: {"a": {"id": "url", ...}, "b": {"id": "url", ...}}
+                keys = list(payload.keys())
+                if len(keys) != 2:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Parallel JSON format must have exactly 2 top-level keys.",
+                    )
+                dict_a, dict_b = payload[keys[0]], payload[keys[1]]
+                all_ids = sorted(set(dict_a) | set(dict_b))
+                raw_pairs = []
+                for pid in all_ids:
+                    if pid not in dict_a:
+                        warnings.append(f"no url_a for pair id: {pid}")
+                        continue
+                    if pid not in dict_b:
+                        warnings.append(f"no url_b for pair id: {pid}")
+                        continue
+                    raw_pairs.append((pid, dict_a[pid], dict_b[pid]))
+
+            for pair_id, url_a, url_b in raw_pairs:
+                try:
+                    img_a = _open_image(url_a)
+                    img_b = _open_image(url_b)
+                    pairs.append((pair_id, url_a, url_b, img_a, img_b))
+                except Exception as exc:
+                    warnings.append(f"could not fetch pair '{pair_id}': {exc}")
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide either 'archive' (zip) or 'json_file' field.",
+            )
+
+        if not pairs and not warnings:
+            raise HTTPException(status_code=400, detail="No valid pairs found.")
+
+        async def generate() -> AsyncIterator[str]:
+            scores: list[float] = []
+            errors = 0
+            bar = tqdm(total=len(pairs), desc="similarity/batch", unit="pair")
+
+            # emit warnings upfront
+            for w in warnings:
+                yield json.dumps({"warning": w}, ensure_ascii=False) + "\n"
+
+            for pair_id, label_a, label_b, img_a, img_b in pairs:
+                try:
+                    result = _run_similarity(img_a, img_b, max_size)
+                    score = result["score"]
+                    scores.append(score)
+                    line: dict = {
+                        "pair_id": pair_id,
+                        "file_a": label_a,
+                        "file_b": label_b,
+                        "score": score,
+                    }
+                except Exception as exc:
+                    errors += 1
+                    line = {
+                        "pair_id": pair_id,
+                        "file_a": label_a,
+                        "file_b": label_b,
+                        "error": str(exc),
+                    }
+                bar.update(1)
+                yield json.dumps(line, ensure_ascii=False) + "\n"
+
+            bar.close()
+
+            # summary line
+            summary: dict = {
+                "summary": True,
+                "total_pairs": len(pairs),
+                "errors": errors,
+                "warnings": len(warnings),
+            }
+            if scores:
+                summary["mean_score"] = round(float(np.mean(scores)), 6)
+                summary["min_score"] = round(float(np.min(scores)), 6)
+                summary["max_score"] = round(float(np.max(scores)), 6)
+            yield json.dumps(summary, ensure_ascii=False) + "\n"
+
+        return StreamingResponse(
+            generate(),
+            media_type="application/x-ndjson",
+            headers={"Content-Disposition": 'attachment; filename="similarity.jsonl"'},
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -450,7 +717,7 @@ def _run_tagger(
 
 
 def main():
-    global _tagger, _tag2category, _vocab_path
+    global _tagger, _tag2category, _vocab_path, _batch_enabled
 
     parser = argparse.ArgumentParser(description="DINOv3 Tagger — Local Standalone")
     parser.add_argument(
@@ -463,9 +730,16 @@ def main():
     parser.add_argument("--max-size", type=int, default=1024)
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=7860)
+    parser.add_argument(
+        "--enable-batch",
+        action="store_true",
+        default=False,
+        help="Enable batch tagging (/tag/batch) and batch similarity (/similarity/batch) endpoints",
+    )
     args = parser.parse_args()
 
     _vocab_path = args.vocab
+    _batch_enabled = args.enable_batch
 
     with open(args.vocab) as f:
         vocab_data = json.load(f)
@@ -477,6 +751,10 @@ def main():
         device=args.device,
         max_size=args.max_size,
     )
+
+    if _batch_enabled:
+        _register_batch_routes()
+        print("  Batch endpoints enabled: /tag/batch  /similarity/batch")
 
     print(f"\n  Tagger UI (local)  →  http://{args.host}:{args.port}\n")
     uvicorn.run(app, host=args.host, port=args.port)

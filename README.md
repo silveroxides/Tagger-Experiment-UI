@@ -103,6 +103,7 @@ python server_local.py \
 | `--host` | `0.0.0.0` | Bind address |
 | `--port` | `7860` | Port |
 | `--max-size` | `1024` | Long-edge pixel cap for inference |
+| `--enable-batch` | off | Enable batch tagging (`/tag/batch`) and batch similarity (`/similarity/batch`) endpoints, and show their UI tabs |
 
 Once running, open `http://localhost:7860` in your browser.
 
@@ -310,6 +311,163 @@ with open("a.jpg", "rb") as fa, open("b.jpg", "rb") as fb:
     r = requests.post("http://localhost:7860/similarity/upload",
                       files={"file_a": fa, "file_b": fb})
 print(r.json())
+```
+
+---
+
+## Batch Endpoints
+
+Both batch endpoints are **opt-in** — pass `--enable-batch` when starting the server, or set `ENABLE_BATCH=1` in `start.bat` / `start.sh`. When enabled, two extra mode tabs appear in the UI: **Batch Tag** and **Batch Sim**.
+
+---
+
+### Batch Tagging
+
+#### `POST /tag/batch`
+
+Tag many images in one request. Returns a streaming JSONL response — one JSON object per line, emitted as each image is processed.
+
+**Query parameters:**
+
+| Param | Default | Description |
+|---|---|---|
+| `max_size` | `1024` | Resize long edge before inference |
+| `floor` | `0.05` | Minimum score threshold (0–1) |
+
+**Body:** `multipart/form-data` — provide **one** of:
+
+| Field | Description |
+|---|---|
+| `files` | One or more image files (repeat the field for each file) |
+| `archive` | A single `.zip` file containing images. Sub-directories are walked recursively; the sub-directory path is recorded as `concept`. `__MACOSX/` entries are skipped. |
+
+**Output line schema:**
+
+```json
+{"hash": "sha256hex", "filename": "husky.jpg", "concept": "dogs", "tags": [{"tag": "...", "score": 0.92, "category": 1}], "count": 42}
+```
+
+`concept` is `null` for direct file uploads or root-level zip images.
+
+Error line (image could not be decoded — batch continues):
+
+```json
+{"hash": "sha256hex", "filename": "bad.jpg", "concept": null, "error": "cannot identify image file"}
+```
+
+```sh
+# Multiple images
+curl -X POST "http://localhost:7860/tag/batch?floor=0.1" \
+     -F "files=@a.jpg" -F "files=@b.png" > tags.jsonl
+
+# Zip archive
+curl -X POST "http://localhost:7860/tag/batch?floor=0.05" \
+     -F "archive=@dataset.zip" > tags.jsonl
+```
+
+```python
+import requests
+
+# Zip archive
+with open("dataset.zip", "rb") as f:
+    r = requests.post("http://localhost:7860/tag/batch",
+                      params={"floor": 0.05},
+                      files={"archive": f},
+                      stream=True)
+    for line in r.iter_lines():
+        if line:
+            print(line.decode())
+```
+
+---
+
+### Batch Similarity
+
+#### `POST /similarity/batch`
+
+Compare many image pairs and get a cosine similarity score per pair. Returns streaming JSONL.
+
+**Query parameters:**
+
+| Param | Default | Description |
+|---|---|---|
+| `max_size` | `1024` | Resize long edge before inference |
+
+**Body:** `multipart/form-data` — provide **one** of:
+
+| Field | Description |
+|---|---|
+| `archive` | Zip file with **exactly 2 top-level directories**. Any directory names are accepted. Files are paired by matching stem (extension-stripped filename), sorted alphanumerically. |
+| `json_file` | JSON file describing URL pairs — two formats supported (see below). |
+
+**JSON pair formats:**
+
+*Flat list* (top-level key `"pairs"`):
+
+```json
+{
+  "pairs": [
+    {"id": "cat001", "url_a": "https://example.com/train/cat001.jpg", "url_b": "https://example.com/gt/cat001.jpg"},
+    {"id": "cat002", "url_a": "https://example.com/train/cat002.jpg", "url_b": "https://example.com/gt/cat002.jpg"}
+  ]
+}
+```
+
+*Parallel dicts* (two top-level keys, any names, values are `{id: url}` maps):
+
+```json
+{
+  "training":      {"cat001": "https://example.com/train/cat001.jpg", "cat002": "https://…"},
+  "ground_truth":  {"cat001": "https://example.com/gt/cat001.jpg",    "cat002": "https://…"}
+}
+```
+
+The server detects the format automatically: if the JSON root contains a `"pairs"` key it uses flat-list mode; otherwise it assumes two parallel dicts.
+
+**Output line schema:**
+
+```json
+{"pair_id": "cat001", "file_a": "training/cat001.jpg", "file_b": "ground_truth/cat001.jpg", "score": 0.8472}
+```
+
+Warning line (unmatched file — batch continues):
+
+```json
+{"warning": "no match for dir_a file: training/extra.jpg"}
+```
+
+Error line (image could not be decoded — batch continues):
+
+```json
+{"pair_id": "cat001", "file_a": "training/cat001.jpg", "file_b": "ground_truth/cat001.jpg", "error": "cannot identify image file"}
+```
+
+Summary line (always last):
+
+```json
+{"summary": true, "total_pairs": 120, "errors": 2, "warnings": 1, "mean_score": 0.791, "min_score": 0.412, "max_score": 0.951}
+```
+
+```sh
+# Zip archive (two dirs: training/ and ground_truth/)
+curl -X POST "http://localhost:7860/similarity/batch" \
+     -F "archive=@eval.zip" > similarity.jsonl
+
+# JSON flat list
+curl -X POST "http://localhost:7860/similarity/batch" \
+     -F "json_file=@pairs.json" > similarity.jsonl
+```
+
+```python
+import requests
+
+with open("eval.zip", "rb") as f:
+    r = requests.post("http://localhost:7860/similarity/batch",
+                      files={"archive": f},
+                      stream=True)
+    for line in r.iter_lines():
+        if line:
+            print(line.decode())
 ```
 
 ---

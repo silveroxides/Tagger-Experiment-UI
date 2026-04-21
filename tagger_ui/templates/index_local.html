@@ -340,6 +340,140 @@
       font-size: .75rem; color: var(--muted); margin-bottom: .4rem;
       text-transform: uppercase; letter-spacing: .04em;
     }
+
+    /* ---- batch panels ---- */
+    #batch-panel, #batch-sim-panel {
+      display: none; width: 100%; max-width: 1600px;
+    }
+
+    .batch-layout {
+      display: flex; gap: 1.25rem; align-items: flex-start; flex-wrap: wrap;
+    }
+    .batch-left { flex: 0 0 520px; min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
+    .batch-right { flex: 1 1 0; min-width: 320px; }
+
+    @media (max-width: 1080px) {
+      .batch-layout { flex-direction: column; }
+      .batch-left { flex: none; width: 100%; }
+    }
+
+    /* drop zone for batch */
+    .batch-drop {
+      border: 2px dashed var(--border); border-radius: var(--radius);
+      color: var(--muted); cursor: pointer; font-size: .85rem;
+      padding: 1.4rem; text-align: center;
+      transition: border-color .15s, background .15s; margin-bottom: 1rem;
+    }
+    .batch-drop.drag-over { border-color: var(--accent); background: rgba(124,106,247,.06); }
+    .batch-drop input[type="file"] { display: none; }
+
+    /* file list preview */
+    .batch-file-list {
+      max-height: 220px; overflow-y: auto; font-size: .78rem;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: var(--bg); padding: .4rem .6rem;
+      display: none;
+    }
+    .batch-file-list .fl-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: .2rem 0; border-bottom: 1px solid var(--border); gap: .5rem;
+    }
+    .batch-file-list .fl-item:last-child { border-bottom: none; }
+    .fl-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fl-size { color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+    .fl-concept { color: var(--accent); font-size: .72rem; white-space: nowrap; flex-shrink: 0; }
+
+    /* progress bar */
+    .batch-progress {
+      display: none; margin-bottom: .75rem;
+    }
+    .batch-progress-label {
+      font-size: .78rem; color: var(--muted); margin-bottom: .3rem;
+      display: flex; justify-content: space-between;
+    }
+    .batch-progress-bar-bg {
+      height: 6px; background: var(--border); border-radius: 3px; overflow: hidden;
+    }
+    .batch-progress-bar-fill {
+      height: 100%; background: var(--accent); border-radius: 3px;
+      transition: width .2s ease; width: 0%;
+    }
+
+    /* results table */
+    .batch-table-wrap {
+      display: none; overflow-x: auto; border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+    .batch-table {
+      width: 100%; border-collapse: collapse; font-size: .78rem;
+    }
+    .batch-table th {
+      background: var(--surface); color: var(--muted); font-weight: 600;
+      padding: .45rem .7rem; text-align: left; border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .batch-table td {
+      padding: .4rem .7rem; border-bottom: 1px solid var(--border);
+      color: var(--text); vertical-align: top;
+    }
+    .batch-table tr:last-child td { border-bottom: none; }
+    .batch-table tr:hover td { background: rgba(255,255,255,.025); }
+
+    .score-high { color: #4ade80; font-weight: 600; }
+    .score-mid  { color: #facc15; font-weight: 600; }
+    .score-low  { color: #f87171; font-weight: 600; }
+
+    .batch-summary {
+      display: none; background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1rem;
+      font-size: .85rem;
+    }
+    .batch-summary-title {
+      font-weight: 700; margin-bottom: .5rem; color: var(--text);
+    }
+    .batch-summary-stats {
+      display: flex; gap: 1.5rem; flex-wrap: wrap; color: var(--muted);
+    }
+    .batch-summary-stats span { white-space: nowrap; }
+    .batch-summary-stats strong { color: var(--text); }
+
+    .batch-dl-row {
+      display: none; gap: .5rem; margin-bottom: .75rem; flex-wrap: wrap;
+    }
+    .dl-btn {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      color: var(--muted); cursor: pointer; font-size: .78rem;
+      padding: .35rem .75rem; transition: border-color .15s, color .15s;
+    }
+    .dl-btn:hover { border-color: var(--accent); color: #a78bfa; }
+
+    /* batch-sim source toggle */
+    .source-toggle {
+      display: flex; gap: .5rem; margin-bottom: 1rem;
+    }
+    .src-btn {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      color: var(--muted); cursor: pointer; font-size: .82rem; font-weight: 600;
+      padding: .4rem 1rem; transition: border-color .15s, color .15s, background .15s;
+    }
+    .src-btn:hover { border-color: var(--accent); color: var(--text); }
+    .src-btn.active { border-color: var(--accent); color: #fff; background: var(--accent); }
+
+    .json-input-area {
+      width: 100%; min-height: 120px; background: var(--bg);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      color: var(--text); font-family: monospace; font-size: .78rem;
+      padding: .6rem .8rem; resize: vertical; outline: none;
+      transition: border-color .15s; margin-bottom: .5rem;
+    }
+    .json-input-area:focus { border-color: var(--accent); }
+    .json-format-hint {
+      font-size: .72rem; color: var(--muted); margin-bottom: .75rem; line-height: 1.5;
+    }
+    .json-format-hint code {
+      background: rgba(255,255,255,.06); border-radius: 3px;
+      padding: .1rem .3rem; font-family: monospace;
+    }
   </style>
 </head>
 <body>
@@ -351,6 +485,10 @@
 <div class="mode-toggle">
   <button class="mode-btn active" id="mode-btn-tagger" onclick="setMode('tagger')">Tagger</button>
   <button class="mode-btn" id="mode-btn-similarity" onclick="setMode('similarity')">Similarity</button>
+  {% if batch_enabled %}
+  <button class="mode-btn" id="mode-btn-batch" onclick="setMode('batch')">Batch Tag</button>
+  <button class="mode-btn" id="mode-btn-batch-sim" onclick="setMode('batch-sim')">Batch Sim</button>
+  {% endif %}
 </div>
 
 <!-- ===== TAGGER MODE ===== -->
@@ -504,6 +642,177 @@
   </div>
 
 </div><!-- /similarity-panel -->
+
+{% if batch_enabled %}
+<!-- ===== BATCH TAG MODE ===== -->
+<div id="batch-panel">
+  <div class="batch-layout">
+
+    <!-- left: input -->
+    <div class="batch-left">
+      <div class="card">
+        <div id="batch-drop" class="batch-drop" onclick="document.getElementById('batch-file-input').click()">
+          <input type="file" id="batch-file-input" multiple
+                 accept="image/*,.zip,application/zip"
+                 onchange="batchStageFiles(this.files)" />
+          Drop images or a <strong>.zip archive</strong> here, or <strong>click to browse</strong>
+        </div>
+
+        <div class="batch-file-list" id="batch-file-list"></div>
+
+        <div class="options-row" style="margin-top:.75rem">
+          <label>Max px <input type="number" id="batch-maxsize" value="1024" min="64" max="4096" step="16" /></label>
+          <label>
+            Min score
+            <input type="range" id="batch-floor-range" min="0" max="99" step="1" value="5"
+                   oninput="document.getElementById('batch-floor-num').value=this.value" />
+            <input type="number" id="batch-floor-num" min="0" max="99" step="1" value="5"
+                   style="width:52px"
+                   oninput="document.getElementById('batch-floor-range').value=this.value" />
+          </label>
+        </div>
+
+        <div style="display:flex;gap:.5rem;margin-top:1rem;align-items:center">
+          <button class="btn" id="batch-run-btn" onclick="runBatchTag()">Tag Batch</button>
+          <span id="batch-status" style="font-size:.8rem;color:var(--muted)"></span>
+        </div>
+        <div class="error-msg" id="batch-error"></div>
+      </div>
+    </div><!-- /batch-left -->
+
+    <!-- right: results -->
+    <div class="batch-right">
+      <div class="card">
+        <div class="batch-progress" id="batch-progress">
+          <div class="batch-progress-label">
+            <span id="batch-progress-text">Processing…</span>
+            <span id="batch-progress-pct">0%</span>
+          </div>
+          <div class="batch-progress-bar-bg">
+            <div class="batch-progress-bar-fill" id="batch-progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="batch-dl-row" id="batch-dl-row">
+          <button class="dl-btn" onclick="downloadBatchJsonl()">Download .jsonl</button>
+        </div>
+
+        <div class="batch-table-wrap" id="batch-table-wrap">
+          <table class="batch-table" id="batch-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Filename</th>
+                <th>Concept</th>
+                <th>Tags</th>
+                <th>Count / Error</th>
+              </tr>
+            </thead>
+            <tbody id="batch-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div><!-- /batch-right -->
+
+  </div>
+</div><!-- /batch-panel -->
+
+<!-- ===== BATCH SIM MODE ===== -->
+<div id="batch-sim-panel">
+  <div class="batch-layout">
+
+    <!-- left: input -->
+    <div class="batch-left">
+      <div class="card">
+
+        <!-- source toggle -->
+        <div class="source-toggle">
+          <button class="src-btn active" id="bsim-src-zip" onclick="setBsimSource('zip')">Zip Archive</button>
+          <button class="src-btn" id="bsim-src-json" onclick="setBsimSource('json')">JSON Pairs</button>
+        </div>
+
+        <!-- zip input -->
+        <div id="bsim-zip-section">
+          <div id="bsim-drop" class="batch-drop" onclick="document.getElementById('bsim-zip-input').click()">
+            <input type="file" id="bsim-zip-input" accept=".zip,application/zip"
+                   onchange="bsimStageZip(this.files[0])" />
+            Drop a <strong>.zip archive</strong> here or <strong>click to browse</strong><br>
+            <span style="font-size:.75rem">Zip must contain exactly 2 top-level directories.<br>Files paired by matching stem, sorted alphanumerically.</span>
+          </div>
+          <div id="bsim-zip-info" style="font-size:.78rem;color:var(--muted);display:none;margin-bottom:.5rem"></div>
+        </div>
+
+        <!-- json input -->
+        <div id="bsim-json-section" style="display:none">
+          <div class="json-format-hint">
+            <strong>Flat list:</strong> <code>{"pairs":[{"id":"x","url_a":"…","url_b":"…"}]}</code><br>
+            <strong>Parallel dicts:</strong> <code>{"a":{"id1":"url…"},"b":{"id1":"url…"}}</code>
+          </div>
+          <textarea class="json-input-area" id="bsim-json-textarea"
+                    placeholder='{"pairs": [{"id": "pair001", "url_a": "https://…", "url_b": "https://…"}]}'></textarea>
+          <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem">
+            <span style="font-size:.78rem;color:var(--muted)">or upload file:</span>
+            <input type="file" id="bsim-json-file-input" accept=".json,application/json"
+                   onchange="bsimLoadJsonFile(this.files[0])"
+                   style="font-size:.78rem;color:var(--muted)" />
+          </div>
+        </div>
+
+        <div class="options-row" style="margin-top:.5rem">
+          <label>Max px <input type="number" id="bsim-maxsize" value="1024" min="64" max="4096" step="16" /></label>
+        </div>
+
+        <div style="display:flex;gap:.5rem;margin-top:1rem;align-items:center">
+          <button class="btn" id="bsim-run-btn" onclick="runBatchSim()">Compare Batch</button>
+          <span id="bsim-status" style="font-size:.8rem;color:var(--muted)"></span>
+        </div>
+        <div class="error-msg" id="bsim-error"></div>
+      </div>
+    </div><!-- /batch-left -->
+
+    <!-- right: results -->
+    <div class="batch-right">
+      <div class="card">
+        <div class="batch-progress" id="bsim-progress">
+          <div class="batch-progress-label">
+            <span id="bsim-progress-text">Processing…</span>
+            <span id="bsim-progress-pct">0%</span>
+          </div>
+          <div class="batch-progress-bar-bg">
+            <div class="batch-progress-bar-fill" id="bsim-progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="batch-summary" id="bsim-summary">
+          <div class="batch-summary-title">Summary</div>
+          <div class="batch-summary-stats" id="bsim-summary-stats"></div>
+        </div>
+
+        <div class="batch-dl-row" id="bsim-dl-row">
+          <button class="dl-btn" onclick="downloadBsimJsonl()">Download .jsonl</button>
+          <button class="dl-btn" onclick="downloadBsimCsv()">Download .csv</button>
+        </div>
+
+        <div class="batch-table-wrap" id="bsim-table-wrap">
+          <table class="batch-table" id="bsim-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Pair ID</th>
+                <th>File A</th>
+                <th>File B</th>
+                <th>Score</th>
+              </tr>
+            </thead>
+            <tbody id="bsim-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div><!-- /batch-right -->
+
+  </div>
+</div><!-- /batch-sim-panel -->
+{% endif %}
 
 <script>
   // ---- category metadata from server ----
@@ -864,11 +1173,18 @@
   });
 
   // ---- mode toggle ----
+  const _ALL_PANELS = ['tagger', 'similarity', 'batch', 'batch-sim'];
   function setMode(mode) {
-    document.getElementById('tagger-panels').style.display  = mode === 'tagger'     ? 'flex' : 'none';
-    document.getElementById('similarity-panel').style.display = mode === 'similarity' ? 'block' : 'none';
-    document.getElementById('mode-btn-tagger').classList.toggle('active', mode === 'tagger');
-    document.getElementById('mode-btn-similarity').classList.toggle('active', mode === 'similarity');
+    document.getElementById('tagger-panels').style.display     = mode === 'tagger'     ? 'flex'  : 'none';
+    document.getElementById('similarity-panel').style.display  = mode === 'similarity' ? 'block' : 'none';
+    const batchPanel    = document.getElementById('batch-panel');
+    const batchSimPanel = document.getElementById('batch-sim-panel');
+    if (batchPanel)    batchPanel.style.display    = mode === 'batch'     ? 'block' : 'none';
+    if (batchSimPanel) batchSimPanel.style.display = mode === 'batch-sim' ? 'block' : 'none';
+    _ALL_PANELS.forEach(m => {
+      const btn = document.getElementById(`mode-btn-${m}`);
+      if (btn) btn.classList.toggle('active', m === mode);
+    });
   }
 
   // ---- similarity: staged files ----
@@ -1042,6 +1358,407 @@
     } catch(err) { console.error('PCA rerun error:', err); }
     finally { spinner.style.display = 'none'; }
   };
+
+  // =====================================================================
+  // BATCH TAG
+  // =====================================================================
+
+  let _batchFiles   = [];   // Array<File> — direct image uploads
+  let _batchZip     = null; // File — zip archive
+  let _batchLines   = [];   // accumulated jsonl lines (strings)
+
+  function _fmtBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
+    return (n/1048576).toFixed(1) + ' MB';
+  }
+
+  function batchStageFiles(fileList) {
+    _batchFiles = [];
+    _batchZip = null;
+    const files = [...fileList];
+    if (files.length === 1 && (files[0].name.endsWith('.zip') || files[0].type === 'application/zip')) {
+      _batchZip = files[0];
+    } else {
+      _batchFiles = files.filter(f => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|tiff?)$/i.test(f.name));
+    }
+    _renderBatchFileList();
+  }
+
+  function _renderBatchFileList() {
+    const el = document.getElementById('batch-file-list');
+    el.innerHTML = '';
+    const items = _batchZip ? [_batchZip] : _batchFiles;
+    if (!items.length) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    items.forEach(f => {
+      const row = document.createElement('div');
+      row.className = 'fl-item';
+      const isZip = f.name.endsWith('.zip');
+      row.innerHTML = `<span class="fl-name">${f.name}</span>`
+        + (isZip ? `<span class="fl-concept">zip</span>` : '')
+        + `<span class="fl-size">${_fmtBytes(f.size)}</span>`;
+      el.appendChild(row);
+    });
+    const count = _batchZip ? '1 archive' : `${_batchFiles.length} image${_batchFiles.length!==1?'s':''}`;
+    document.getElementById('batch-status').textContent = count + ' selected';
+  }
+
+  // drag-drop for batch drop zone
+  (function() {
+    const dz = document.getElementById('batch-drop');
+    if (!dz) return;
+    dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+    dz.addEventListener('drop', e => {
+      e.preventDefault(); dz.classList.remove('drag-over');
+      batchStageFiles(e.dataTransfer.files);
+    });
+  })();
+
+  window.runBatchTag = async function() {
+    if (!_batchZip && !_batchFiles.length) {
+      _batchShowError('No files selected.');
+      return;
+    }
+    _batchLines = [];
+    document.getElementById('batch-error').style.display = 'none';
+    document.getElementById('batch-run-btn').disabled = true;
+    document.getElementById('batch-dl-row').style.display = 'none';
+    document.getElementById('batch-table-wrap').style.display = 'none';
+    document.getElementById('batch-tbody').innerHTML = '';
+
+    const fd = new FormData();
+    const maxSize = +document.getElementById('batch-maxsize').value;
+    const floor   = (+document.getElementById('batch-floor-num').value) / 100;
+
+    if (_batchZip) {
+      fd.append('archive', _batchZip);
+    } else {
+      _batchFiles.forEach(f => fd.append('files', f));
+    }
+
+    const progressEl  = document.getElementById('batch-progress');
+    const progressFill = document.getElementById('batch-progress-fill');
+    const progressText = document.getElementById('batch-progress-text');
+    const progressPct  = document.getElementById('batch-progress-pct');
+    progressEl.style.display = 'block';
+    progressFill.style.width = '0%';
+    document.getElementById('batch-table-wrap').style.display = 'block';
+
+    let rowIdx = 0;
+    const total = _batchZip ? null : _batchFiles.length; // zip: unknown until stream
+
+    try {
+      const res = await fetch(`/tag/batch?max_size=${maxSize}&floor=${floor}`, { method: 'POST', body: fd });
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop(); // incomplete last line
+        for (const raw of lines) {
+          const line = raw.trim();
+          if (!line) continue;
+          _batchLines.push(line);
+          let obj;
+          try { obj = JSON.parse(line); } catch { continue; }
+          rowIdx++;
+          _appendBatchRow(rowIdx, obj);
+
+          if (total) {
+            const pct = Math.round((rowIdx / total) * 100);
+            progressFill.style.width = pct + '%';
+            progressPct.textContent  = pct + '%';
+          }
+          progressText.textContent = `${rowIdx} image${rowIdx!==1?'s':''} processed…`;
+        }
+      }
+      // flush remaining
+      if (buf.trim()) {
+        _batchLines.push(buf.trim());
+        let obj; try { obj = JSON.parse(buf.trim()); } catch { obj = null; }
+        if (obj) { rowIdx++; _appendBatchRow(rowIdx, obj); }
+      }
+
+      progressFill.style.width = '100%';
+      progressPct.textContent  = '100%';
+      progressText.textContent = `Done — ${rowIdx} image${rowIdx!==1?'s':''} tagged`;
+      document.getElementById('batch-dl-row').style.display = 'flex';
+    } catch(err) {
+      _batchShowError(String(err));
+    } finally {
+      document.getElementById('batch-run-btn').disabled = false;
+    }
+  };
+
+  function _appendBatchRow(idx, obj) {
+    const tbody = document.getElementById('batch-tbody');
+    const tr = document.createElement('tr');
+    if (obj.error) {
+      tr.innerHTML = `<td>${idx}</td><td>${_esc(obj.filename||'')}</td><td>${_esc(obj.concept||'')}</td>`
+        + `<td colspan="2" style="color:#f87171">${_esc(obj.error)}</td>`;
+    } else {
+      const preview = (obj.tags||[]).slice(0,5).map(t=>t.tag).join(', ');
+      const more    = (obj.tags||[]).length > 5 ? ` +${obj.tags.length-5}` : '';
+      tr.innerHTML = `<td>${idx}</td><td title="${_esc(obj.filename||'')}">${_esc(_short(obj.filename||'',32))}</td>`
+        + `<td>${_esc(obj.concept||'')}</td>`
+        + `<td style="color:var(--muted)">${_esc(preview)}${more}</td>`
+        + `<td>${obj.count||0}</td>`;
+    }
+    tbody.appendChild(tr);
+    // auto-scroll
+    tbody.parentElement.parentElement.scrollTop = tbody.parentElement.parentElement.scrollHeight;
+  }
+
+  function _batchShowError(msg) {
+    const el = document.getElementById('batch-error');
+    el.textContent = msg; el.style.display = 'block';
+  }
+
+  window.downloadBatchJsonl = function() {
+    _downloadBlob(_batchLines.join('\n'), 'tags.jsonl', 'application/x-ndjson');
+  };
+
+  // =====================================================================
+  // BATCH SIMILARITY
+  // =====================================================================
+
+  let _bsimZipFile  = null;
+  let _bsimSource   = 'zip'; // 'zip' | 'json'
+  let _bsimLines    = [];    // accumulated result lines (strings, excluding warnings/summary)
+  let _bsimAllLines = [];    // all raw lines including warnings/summary
+
+  function setBsimSource(src) {
+    _bsimSource = src;
+    document.getElementById('bsim-src-zip').classList.toggle('active', src === 'zip');
+    document.getElementById('bsim-src-json').classList.toggle('active', src === 'json');
+    document.getElementById('bsim-zip-section').style.display  = src === 'zip'  ? 'block' : 'none';
+    document.getElementById('bsim-json-section').style.display = src === 'json' ? 'block' : 'none';
+  }
+
+  function bsimStageZip(file) {
+    if (!file) return;
+    _bsimZipFile = file;
+    const info = document.getElementById('bsim-zip-info');
+    info.textContent = `${file.name}  (${_fmtBytes(file.size)})`;
+    info.style.display = 'block';
+    document.getElementById('bsim-status').textContent = 'archive ready';
+  }
+
+  window.bsimLoadJsonFile = function(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('bsim-json-textarea').value = e.target.result;
+      document.getElementById('bsim-status').textContent = `${file.name} loaded`;
+    };
+    reader.readAsText(file);
+  };
+
+  // drag-drop for batch-sim drop zone
+  (function() {
+    const dz = document.getElementById('bsim-drop');
+    if (!dz) return;
+    dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+    dz.addEventListener('drop', e => {
+      e.preventDefault(); dz.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) { document.getElementById('bsim-zip-input').files; bsimStageZip(file); }
+    });
+  })();
+
+  window.runBatchSim = async function() {
+    _bsimLines = [];
+    _bsimAllLines = [];
+    document.getElementById('bsim-error').style.display = 'none';
+    document.getElementById('bsim-summary').style.display = 'none';
+    document.getElementById('bsim-dl-row').style.display = 'none';
+    document.getElementById('bsim-table-wrap').style.display = 'none';
+    document.getElementById('bsim-tbody').innerHTML = '';
+    document.getElementById('bsim-run-btn').disabled = true;
+
+    const fd = new FormData();
+    const maxSize = +document.getElementById('bsim-maxsize').value;
+
+    if (_bsimSource === 'zip') {
+      if (!_bsimZipFile) { _bsimShowError('No zip archive selected.'); document.getElementById('bsim-run-btn').disabled=false; return; }
+      fd.append('archive', _bsimZipFile);
+    } else {
+      const raw = document.getElementById('bsim-json-textarea').value.trim();
+      if (!raw) { _bsimShowError('Paste or upload JSON first.'); document.getElementById('bsim-run-btn').disabled=false; return; }
+      const blob = new Blob([raw], { type: 'application/json' });
+      fd.append('json_file', blob, 'pairs.json');
+    }
+
+    const progressEl   = document.getElementById('bsim-progress');
+    const progressFill = document.getElementById('bsim-progress-fill');
+    const progressText = document.getElementById('bsim-progress-text');
+    const progressPct  = document.getElementById('bsim-progress-pct');
+    progressEl.style.display = 'block';
+    progressFill.style.width = '0%';
+    document.getElementById('bsim-table-wrap').style.display = 'block';
+
+    let rowIdx = 0;
+    let totalPairs = null;
+
+    try {
+      const res = await fetch(`/similarity/batch?max_size=${maxSize}`, { method: 'POST', body: fd });
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const raw of lines) {
+          const line = raw.trim();
+          if (!line) continue;
+          _bsimAllLines.push(line);
+          let obj; try { obj = JSON.parse(line); } catch { continue; }
+
+          if (obj.summary) {
+            totalPairs = obj.total_pairs;
+            _renderBsimSummary(obj);
+            continue;
+          }
+          if (obj.warning) {
+            _appendBsimWarning(obj.warning);
+            continue;
+          }
+          rowIdx++;
+          _bsimLines.push(line);
+          _appendBsimRow(rowIdx, obj);
+
+          if (totalPairs) {
+            const pct = Math.round((rowIdx / totalPairs) * 100);
+            progressFill.style.width = pct + '%';
+            progressPct.textContent  = pct + '%';
+          }
+          progressText.textContent = `${rowIdx} pair${rowIdx!==1?'s':''} compared…`;
+        }
+      }
+      if (buf.trim()) {
+        _bsimAllLines.push(buf.trim());
+        let obj; try { obj = JSON.parse(buf.trim()); } catch { obj = null; }
+        if (obj) {
+          if (obj.summary) { totalPairs = obj.total_pairs; _renderBsimSummary(obj); }
+          else if (obj.warning) { _appendBsimWarning(obj.warning); }
+          else { rowIdx++; _bsimLines.push(buf.trim()); _appendBsimRow(rowIdx, obj); }
+        }
+      }
+
+      progressFill.style.width = '100%';
+      progressPct.textContent  = '100%';
+      progressText.textContent = `Done — ${rowIdx} pair${rowIdx!==1?'s':''} compared`;
+      document.getElementById('bsim-dl-row').style.display = 'flex';
+    } catch(err) {
+      _bsimShowError(String(err));
+    } finally {
+      document.getElementById('bsim-run-btn').disabled = false;
+    }
+  };
+
+  function _appendBsimRow(idx, obj) {
+    const tbody = document.getElementById('bsim-tbody');
+    const tr = document.createElement('tr');
+    if (obj.error) {
+      tr.innerHTML = `<td>${idx}</td><td>${_esc(obj.pair_id||'')}</td>`
+        + `<td>${_esc(_short(obj.file_a||'',28))}</td><td>${_esc(_short(obj.file_b||'',28))}</td>`
+        + `<td style="color:#f87171">${_esc(obj.error)}</td>`;
+    } else {
+      const s = obj.score;
+      const cls = s > 0.7 ? 'score-high' : s > 0.4 ? 'score-mid' : 'score-low';
+      tr.innerHTML = `<td>${idx}</td><td>${_esc(obj.pair_id||'')}</td>`
+        + `<td title="${_esc(obj.file_a||'')}">${_esc(_short(obj.file_a||'',28))}</td>`
+        + `<td title="${_esc(obj.file_b||'')}">${_esc(_short(obj.file_b||'',28))}</td>`
+        + `<td class="${cls}">${typeof s==='number'?s.toFixed(4):s}</td>`;
+    }
+    tbody.appendChild(tr);
+    tbody.parentElement.parentElement.scrollTop = tbody.parentElement.parentElement.scrollHeight;
+  }
+
+  function _appendBsimWarning(msg) {
+    const tbody = document.getElementById('bsim-tbody');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="5" style="color:#facc15;font-size:.75rem">⚠ ${_esc(msg)}</td>`;
+    tbody.appendChild(tr);
+  }
+
+  function _renderBsimSummary(obj) {
+    const el = document.getElementById('bsim-summary');
+    const stats = document.getElementById('bsim-summary-stats');
+    const parts = [
+      `<span>Pairs: <strong>${obj.total_pairs}</strong></span>`,
+      typeof obj.mean_score !== 'undefined' ? `<span>Mean: <strong>${obj.mean_score.toFixed(4)}</strong></span>` : '',
+      typeof obj.min_score  !== 'undefined' ? `<span>Min: <strong>${obj.min_score.toFixed(4)}</strong></span>`  : '',
+      typeof obj.max_score  !== 'undefined' ? `<span>Max: <strong>${obj.max_score.toFixed(4)}</strong></span>`  : '',
+      obj.errors   ? `<span style="color:#f87171">Errors: <strong>${obj.errors}</strong></span>`   : '',
+      obj.warnings ? `<span style="color:#facc15">Warnings: <strong>${obj.warnings}</strong></span>` : '',
+    ].filter(Boolean);
+    stats.innerHTML = parts.join('');
+    el.style.display = 'block';
+  }
+
+  function _bsimShowError(msg) {
+    const el = document.getElementById('bsim-error');
+    el.textContent = msg; el.style.display = 'block';
+  }
+
+  window.downloadBsimJsonl = function() {
+    _downloadBlob(_bsimAllLines.join('\n'), 'similarity.jsonl', 'application/x-ndjson');
+  };
+
+  window.downloadBsimCsv = function() {
+    const rows = ['pair_id,file_a,file_b,score'];
+    for (const line of _bsimLines) {
+      let obj; try { obj = JSON.parse(line); } catch { continue; }
+      if (obj.summary || obj.warning) continue;
+      const score = obj.error ? 'ERROR' : (typeof obj.score === 'number' ? obj.score.toFixed(6) : '');
+      rows.push([obj.pair_id, obj.file_a, obj.file_b, score].map(_csvCell).join(','));
+    }
+    _downloadBlob(rows.join('\r\n'), 'similarity.csv', 'text/csv');
+  };
+
+  // =====================================================================
+  // Shared utilities
+  // =====================================================================
+
+  function _esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function _short(s, max) {
+    return s.length > max ? '…' + s.slice(-(max-1)) : s;
+  }
+  function _csvCell(v) {
+    const s = String(v ?? '');
+    return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g,'""')}"` : s;
+  }
+  function _downloadBlob(content, filename, mime) {
+    const blob = new Blob([content], { type: mime });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
   window.runSimilarity = async function() {
     const urlA = document.getElementById('sim-url-a').value.trim();

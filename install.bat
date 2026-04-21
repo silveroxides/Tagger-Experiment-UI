@@ -87,33 +87,100 @@ if errorlevel 1 (
 
 :: --- model weights ---
 echo.
-set /p HAS_WEIGHTS=Do you already have tagger_proto.safetensors locally? (y/n): 
-if /i "!HAS_WEIGHTS!"=="y" (
-    set /p CHECKPOINT_PATH=Path to tagger_proto.safetensors: 
-    if not exist "!CHECKPOINT_PATH!" (
-        echo ERROR: File not found: !CHECKPOINT_PATH!
-        pause & exit /b 1
-    )
-) else (
-    set CHECKPOINT_PATH=tagger_proto.safetensors
-    echo Downloading model weights (~4 GB)...
-    where curl >nul 2>&1
-    if not errorlevel 1 (
-        curl -L -o tagger_proto.safetensors "https://huggingface.co/lodestones/tagger-experiment/resolve/main/tagger_proto.safetensors"
-    ) else (
-        powershell -Command "Invoke-WebRequest -Uri 'https://huggingface.co/lodestones/tagger-experiment/resolve/main/tagger_proto.safetensors' -OutFile 'tagger_proto.safetensors'"
-    )
-    if not exist tagger_proto.safetensors (
-        echo ERROR: Download failed.
-        pause & exit /b 1
-    )
+set WEIGHTS_DEFAULT=n
+if exist tagger_proto.safetensors set WEIGHTS_DEFAULT=y
+if "!WEIGHTS_DEFAULT!"=="y" (
+    echo  Found tagger_proto.safetensors in current directory.
 )
+set /p HAS_WEIGHTS=Do you already have tagger_proto.safetensors locally? (y/n, default !WEIGHTS_DEFAULT!): 
+if "!HAS_WEIGHTS!"=="" set HAS_WEIGHTS=!WEIGHTS_DEFAULT!
+if /i "!HAS_WEIGHTS!"=="y" goto :weights_local
+
+:: --- download weights ---
+set CHECKPOINT_PATH=tagger_proto.safetensors
+echo Installing huggingface_hub...
+pip install -q huggingface_hub
+if errorlevel 1 (
+    echo ERROR: Could not install huggingface_hub.
+    pause & exit /b 1
+)
+echo Downloading model weights (~4 GB)...
+hf download lodestones/tagger-experiment tagger_proto.safetensors --local-dir .
+if not exist tagger_proto.safetensors (
+    echo ERROR: Download failed.
+    pause & exit /b 1
+)
+goto :weights_done
+
+:weights_local
+set /p CHECKPOINT_PATH=Path to tagger_proto.safetensors (default: tagger_proto.safetensors): 
+if "!CHECKPOINT_PATH!"=="" set CHECKPOINT_PATH=tagger_proto.safetensors
+if not exist "!CHECKPOINT_PATH!" (
+    echo ERROR: File not found: !CHECKPOINT_PATH!
+    pause & exit /b 1
+)
+
+:weights_done
+
+:: --- vocab ---
+echo Downloading vocabulary...
+hf download lodestones/tagger-experiment tagger_vocab_with_categories.json --local-dir .
+if not exist tagger_vocab_with_categories.json (
+    echo ERROR: Vocab download failed.
+    pause & exit /b 1
+)
+
+:: --- GPU selection ---
+echo.
+echo  Select GPU / device to use:
+echo  [1] cuda        (default - let PyTorch pick the first available GPU)
+echo  [2] cuda:0      (first GPU, explicit)
+echo  [3] cuda:1      (second GPU)
+echo  [4] cuda:2      (third GPU)
+echo  [5] cuda:3      (fourth GPU)
+echo  [6] cpu
+echo  [7] Enter custom (e.g. cuda:0, mps, cpu)
+echo.
+set /p GPU_CHOICE=Choice (1-7, default 1): 
+if "!GPU_CHOICE!"=="" set GPU_CHOICE=1
+
+if "!GPU_CHOICE!"=="1" set DEVICE=cuda
+if "!GPU_CHOICE!"=="2" set DEVICE=cuda:0
+if "!GPU_CHOICE!"=="3" set DEVICE=cuda:1
+if "!GPU_CHOICE!"=="4" set DEVICE=cuda:2
+if "!GPU_CHOICE!"=="5" set DEVICE=cuda:3
+if "!GPU_CHOICE!"=="6" set DEVICE=cpu
+if "!GPU_CHOICE!"=="7" set /p DEVICE=Enter device string: 
+
+if "!DEVICE!"=="" (
+    echo Invalid choice.
+    pause & exit /b 1
+)
+
+echo Validating device !DEVICE!...
+python -c "import torch; torch.zeros(1).to('!DEVICE!'); print('Device OK')" 2>nul
+if not errorlevel 1 goto :gpu_ok
+echo.
+echo  WARNING: Could not initialise device '!DEVICE!'.
+echo  This may mean the GPU is not available or CUDA is not installed correctly.
+echo.
+set /p CONTINUE_ANYWAY=Continue anyway? (y/n): 
+if /i not "!CONTINUE_ANYWAY!"=="y" (
+    pause & exit /b 1
+)
+:gpu_ok
+
+:: --- batch mode ---
+echo.
+set /p ENABLE_BATCH=Enable batch tagging and batch similarity endpoints by default? (y/n, default n): 
+set BATCH_FLAG=
+if /i "!ENABLE_BATCH!"=="y" set BATCH_FLAG= --enable-batch
 
 :: --- write run.bat ---
 (
     echo @echo off
     echo call "!VENV_DIR!\Scripts\activate.bat"
-    echo python server_local.py --checkpoint "!CHECKPOINT_PATH!" --vocab tagger_vocab_with_categories.json --device !DEVICE! --port 7860
+    echo python server_local.py --checkpoint "!CHECKPOINT_PATH!" --vocab tagger_vocab_with_categories.json --device !DEVICE! --port 7860!BATCH_FLAG!
 ) > run.bat
 
 echo.
