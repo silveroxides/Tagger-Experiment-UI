@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo.
-echo  DINOv3 Tagger - Local Installer
+echo  DINOv3 Tagger - Local Install
 echo  ================================
 echo.
 
