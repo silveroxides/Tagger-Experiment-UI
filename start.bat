@@ -8,7 +8,7 @@ set CHECKPOINT=tagger_proto.safetensors
 set VOCAB=tagger_vocab_with_categories.json
 set DEVICE=cuda
 set PORT=7860
-set HOST=0.0.0.0
+set HOST=127.0.0.1
 :: Set to 1 to enable batch tagging and batch similarity endpoints
 set ENABLE_BATCH=0
 :: ============================================================
