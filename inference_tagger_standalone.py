@@ -530,7 +530,7 @@ class Tagger:
         self.dtype = dtype
         self.max_size = max_size
 
-        with open(vocab_path) as f:
+        with open(vocab_path, encoding="utf-8") as f:
             data = json.load(f)
         self.idx2tag: list[str] = data["idx2tag"]
         self.num_tags = len(self.idx2tag)
