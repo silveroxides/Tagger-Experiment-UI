@@ -105,7 +105,7 @@ if errorlevel 1 (
     pause & exit /b 1
 )
 echo Downloading model weights (~4 GB)...
-hf download lodestones/tagger-experiment tagger_proto.safetensors --local-dir .
+hf download lodestones/taggerine tagger_proto.safetensors --local-dir .
 if not exist tagger_proto.safetensors (
     echo ERROR: Download failed.
     pause & exit /b 1
@@ -124,7 +124,7 @@ if not exist "!CHECKPOINT_PATH!" (
 
 :: --- vocab ---
 echo Downloading vocabulary...
-hf download lodestones/tagger-experiment tagger_vocab_with_categories.json --local-dir .
+hf download lodestones/taggerine tagger_vocab_with_categories.json --local-dir .
 if not exist tagger_vocab_with_categories.json (
     echo ERROR: Vocab download failed.
     pause & exit /b 1

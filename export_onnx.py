@@ -126,7 +126,7 @@ from inference_tagger_standalone import (
 # Constants
 # ---------------------------------------------------------------------------
 
-HF_REPO_ID = "lodestones/tagger-experiment"
+HF_REPO_ID = "lodestones/taggerine"
 HF_FILENAME = "tagger_proto.safetensors"
 DEFAULT_VOCAB = "tagger_vocab.json"
 

@@ -32,7 +32,7 @@ from inference_tagger_standalone import (
 # ---------------------------------------------------------------------------
 
 os.system(
-    "wget -nv https://huggingface.co/lodestones/tagger-experiment/resolve/main/tagger_proto.safetensors"
+    "wget -nv https://huggingface.co/lodestones/taggerine/resolve/main/tagger_proto.safetensors"
 )
 
 _VOCAB_PATH = "./tagger_vocab_with_categories.json"

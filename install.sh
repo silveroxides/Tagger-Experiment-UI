@@ -99,7 +99,7 @@ else
         exit 1
     fi
     echo "Downloading model weights (~4 GB)..."
-    hf download lodestones/tagger-experiment tagger_proto.safetensors --local-dir .
+    hf download lodestones/taggerine tagger_proto.safetensors --local-dir .
     if [ ! -f "$CHECKPOINT_PATH" ]; then
         echo "ERROR: Download failed."
         exit 1
@@ -108,7 +108,7 @@ fi
 
 # --- vocab ---
 echo "Downloading vocabulary..."
-hf download lodestones/tagger-experiment tagger_vocab_with_categories.json --local-dir .
+hf download lodestones/taggerine tagger_vocab_with_categories.json --local-dir .
 if [ ! -f "tagger_vocab_with_categories.json" ]; then
     echo "ERROR: Vocab download failed."
     exit 1
