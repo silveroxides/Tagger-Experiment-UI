@@ -912,7 +912,7 @@ def main():
     _vocab_path = args.vocab
     _batch_enabled = args.enable_batch
 
-    with open(args.vocab) as f:
+    with open(args.vocab, encoding="utf-8") as f:
         vocab_data = json.load(f)
     _tag2category = vocab_data.get("tag2category", {})
 
