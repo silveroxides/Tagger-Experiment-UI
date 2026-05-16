@@ -17,11 +17,13 @@ python server_local.py \
 from __future__ import annotations
 
 import argparse
+import asyncio
 import base64
 import hashlib
 import io
 import json
 import zipfile
+from collections import defaultdict
 from pathlib import Path
 from typing import AsyncIterator, List, Optional
 
@@ -206,6 +208,137 @@ async def similarity_upload(
 
 
 # ---------------------------------------------------------------------------
+# Helpers — bucketed batch inference
+# ---------------------------------------------------------------------------
+
+
+def _snapped_size(img: Image.Image, max_size: int) -> tuple[int, int]:
+    """Return the (new_h, new_w) that _preprocess will produce for this image."""
+    w, h = img.size
+    scale = min(1.0, max_size / max(w, h))
+    new_w = _snap(round(w * scale), PATCH_SIZE)
+    new_h = _snap(round(h * scale), PATCH_SIZE)
+    return new_h, new_w
+
+
+def _run_tagger_batch(
+    images: list[Image.Image],
+    max_size: int,
+    floor: float,
+) -> list[dict]:
+    """Run tagger on a list of images using bucketed batch inference.
+
+    Images that share the same snapped (H, W) are stacked into a single
+    forward pass.  Returns one result dict per input image, in input order.
+    """
+    assert _tagger is not None
+
+    # Build index → (bucket_key, tensor)
+    preprocessed: list[tuple[tuple[int, int], torch.Tensor]] = []
+    for img in images:
+        size_key = _snapped_size(img, max_size)
+        pv = _preprocess(img, max_size)   # [1, 3, H, W]
+        preprocessed.append((size_key, pv))
+
+    # Group by bucket
+    buckets: dict[tuple[int, int], list[int]] = defaultdict(list)
+    for idx, (size_key, _) in enumerate(preprocessed):
+        buckets[size_key].append(idx)
+
+    results: list[dict | None] = [None] * len(images)
+
+    for size_key, indices in buckets.items():
+        # Stack all images of the same spatial size
+        batch_pv = torch.cat([preprocessed[i][1] for i in indices], dim=0)  # [B, 3, H, W]
+
+        with (
+            torch.no_grad(),
+            torch.autocast(device_type=_tagger.device.type, dtype=_tagger.dtype),
+        ):
+            logits_batch = _tagger.model(batch_pv)  # [B, num_tags]
+
+        for local_i, global_i in enumerate(indices):
+            logits = logits_batch[local_i]
+            scores = torch.sigmoid(logits.float())
+            mask = scores >= floor
+            indices_above = mask.nonzero(as_tuple=True)[0]
+            values = scores[indices_above]
+            order = values.argsort(descending=True)
+            indices_above = indices_above[order]
+            values = values[order]
+
+            by_category: dict[int, list] = {}
+            all_tags: list[dict] = []
+            for ti, tv in zip(indices_above.tolist(), values.tolist()):
+                tag = _tagger.idx2tag[ti]
+                cat = _tag2category.get(tag, -1) + _CAT_OFFSET
+                item = {"tag": tag, "score": round(tv, 4), "category": cat}
+                all_tags.append(item)
+                by_category.setdefault(cat, []).append(item)
+
+            results[global_i] = {"tags": all_tags, "count": len(all_tags)}
+
+    return results  # type: ignore[return-value]
+
+
+def _run_similarity_batch(
+    pairs: list[tuple[Image.Image, Image.Image]],
+    max_size: int,
+) -> list[float]:
+    """Run similarity on a list of (img_a, img_b) pairs using bucketed batch inference.
+
+    All images (both sides of every pair) that share the same snapped (H, W)
+    are stacked into a single forward_embedding call.
+    Returns one score per input pair, in input order.
+    """
+    assert _tagger is not None
+
+    n = len(pairs)
+    # Flatten pairs → individual images with back-references
+    # flat[i*2]   = img_a for pair i
+    # flat[i*2+1] = img_b for pair i
+    flat_imgs = []
+    for img_a, img_b in pairs:
+        flat_imgs.append(img_a)
+        flat_imgs.append(img_b)
+
+    flat_pv: list[tuple[tuple[int, int], torch.Tensor]] = []
+    for img in flat_imgs:
+        size_key = _snapped_size(img, max_size)
+        pv = _preprocess(img, max_size)
+        flat_pv.append((size_key, pv))
+
+    # Group flat indices by spatial size
+    buckets: dict[tuple[int, int], list[int]] = defaultdict(list)
+    for idx, (size_key, _) in enumerate(flat_pv):
+        buckets[size_key].append(idx)
+
+    flat_feats: list[np.ndarray | None] = [None] * (n * 2)
+
+    for size_key, indices in buckets.items():
+        batch_pv = torch.cat([flat_pv[i][1] for i in indices], dim=0)  # [B, 3, H, W]
+
+        with (
+            torch.no_grad(),
+            torch.autocast(device_type=_tagger.device.type, dtype=_tagger.dtype),
+        ):
+            feats = _tagger.model.forward_embedding(batch_pv)  # [B, FEATURE_DIM]
+
+        feats_np = feats.float().cpu().numpy()  # [B, FEATURE_DIM]
+        for local_i, global_i in enumerate(indices):
+            f = feats_np[local_i]
+            flat_feats[global_i] = f / (np.linalg.norm(f) + 1e-8)
+
+    scores: list[float] = []
+    for i in range(n):
+        fa = flat_feats[i * 2]
+        fb = flat_feats[i * 2 + 1]
+        scores.append(round(float(np.dot(fa, fb)), 6))
+
+    return scores
+
+
+# ---------------------------------------------------------------------------
 # Routes — Batch Tagging  (only registered when --enable-batch)
 # ---------------------------------------------------------------------------
 
@@ -250,30 +383,55 @@ def _register_batch_routes() -> None:
         if not items:
             raise HTTPException(status_code=400, detail="No images found in request.")
 
+        # Decode PIL images upfront (fast, CPU-only); keep raw bytes for hashing
+        decoded: list[tuple[bytes, str, str | None, Image.Image | None, str | None]] = []
+        for raw, filename, concept in items:
+            try:
+                img = Image.open(io.BytesIO(raw)).convert("RGB")
+                decoded.append((raw, filename, concept, img, None))
+            except Exception as exc:
+                decoded.append((raw, filename, concept, None, str(exc)))
+
+        loop = asyncio.get_event_loop()
+
         async def generate() -> AsyncIterator[str]:
-            bar = tqdm(total=len(items), desc="tag/batch", unit="img")
-            for raw, filename, concept in items:
+            # Separate good images from decode errors
+            good_indices = [i for i, (_, _, _, img, _) in enumerate(decoded) if img is not None]
+            good_images  = [decoded[i][3] for i in good_indices]
+
+            # Run bucketed batch inference in executor (unblocks event loop)
+            results: list[dict] = []
+            if good_images:
+                bar = tqdm(total=len(decoded), desc="tag/batch", unit="img")
+                results = await loop.run_in_executor(
+                    None, _run_tagger_batch, good_images, max_size, floor
+                )
+                bar.close()
+            else:
+                bar = tqdm(total=len(decoded), desc="tag/batch", unit="img")
+                bar.close()
+
+            # Merge results back in original order and stream
+            result_iter = iter(results)
+            for i, (raw, filename, concept, img, decode_err) in enumerate(decoded):
                 img_hash = hashlib.sha256(raw).hexdigest()
-                try:
-                    img = Image.open(io.BytesIO(raw)).convert("RGB")
-                    result = _run_tagger(img, max_size, floor)
+                if decode_err is not None:
+                    line: dict = {
+                        "hash": img_hash,
+                        "filename": filename,
+                        "concept": concept,
+                        "error": decode_err,
+                    }
+                else:
+                    r = next(result_iter)
                     line = {
                         "hash": img_hash,
                         "filename": filename,
                         "concept": concept,
-                        "tags": result["tags"],
-                        "count": result["count"],
+                        "tags": r["tags"],
+                        "count": r["count"],
                     }
-                except Exception as exc:
-                    line = {
-                        "hash": img_hash,
-                        "filename": filename,
-                        "concept": concept,
-                        "error": str(exc),
-                    }
-                bar.update(1)
                 yield json.dumps(line, ensure_ascii=False) + "\n"
-            bar.close()
 
         return StreamingResponse(
             generate(),
@@ -293,9 +451,11 @@ def _register_batch_routes() -> None:
     ):
         assert _tagger is not None
 
-        # --- Build list of (pair_id, file_a_label, file_b_label, img_a, img_b) ---
-        # Each entry: (pair_id: str, label_a: str, label_b: str, img_a: Image, img_b: Image)
-        pairs: list[tuple[str, str, str, Image.Image, Image.Image]] = []
+        # --- Build pair plan: (pair_id, label_a, label_b, img_a, img_b | error) ---
+        # PIL decode happens here for zip (cheap CPU op).
+        # URL fetching for JSON mode also happens here (network I/O, acceptable
+        # since we need all images before we can bucket by spatial size).
+        pair_plan: list[tuple[str, str, str, Image.Image | None, Image.Image | None, str | None]] = []
         warnings: list[str] = []
 
         if archive is not None:
@@ -305,7 +465,6 @@ def _register_batch_routes() -> None:
             except zipfile.BadZipFile as e:
                 raise HTTPException(status_code=400, detail=f"Bad zip: {e}")
 
-            # find exactly 2 top-level dirs
             top_dirs: set[str] = set()
             for entry in zf.infolist():
                 if entry.is_dir():
@@ -321,7 +480,6 @@ def _register_batch_routes() -> None:
             dir_a, dir_b = sorted(top_dirs)
 
             def _zip_images(d: str) -> dict[str, tuple[str, bytes]]:
-                """stem → (full_path, bytes) for all images in directory d."""
                 out: dict[str, tuple[str, bytes]] = {}
                 for entry in zf.infolist():
                     if entry.is_dir():
@@ -332,7 +490,7 @@ def _register_batch_routes() -> None:
                     if p.suffix.lower() not in _IMAGE_EXTS:
                         continue
                     out[p.stem] = (entry.filename, zf.read(entry.filename))
-                return dict(sorted(out.items()))  # alphanumeric sort by stem
+                return dict(sorted(out.items()))
 
             imgs_a = _zip_images(dir_a)
             imgs_b = _zip_images(dir_b)
@@ -350,9 +508,9 @@ def _register_batch_routes() -> None:
                 try:
                     img_a = Image.open(io.BytesIO(raw_a)).convert("RGB")
                     img_b = Image.open(io.BytesIO(raw_b)).convert("RGB")
-                    pairs.append((stem, path_a, path_b, img_a, img_b))
+                    pair_plan.append((stem, path_a, path_b, img_a, img_b, None))
                 except Exception as exc:
-                    warnings.append(f"could not decode pair '{stem}': {exc}")
+                    pair_plan.append((stem, path_a, path_b, None, None, str(exc)))
 
         elif json_file is not None:
             raw_json = await json_file.read()
@@ -364,9 +522,7 @@ def _register_batch_routes() -> None:
             if not isinstance(payload, dict):
                 raise HTTPException(status_code=400, detail="JSON root must be an object.")
 
-            # Detect format
             if "pairs" in payload:
-                # flat list format: {"pairs": [{"id": ..., "url_a": ..., "url_b": ...}]}
                 pair_list = payload["pairs"]
                 if not isinstance(pair_list, list):
                     raise HTTPException(status_code=400, detail='"pairs" must be a list.')
@@ -375,14 +531,13 @@ def _register_batch_routes() -> None:
                     for i, p in enumerate(pair_list)
                 ]
             else:
-                # parallel dicts: {"a": {"id": "url", ...}, "b": {"id": "url", ...}}
-                keys = list(payload.keys())
-                if len(keys) != 2:
+                jkeys = list(payload.keys())
+                if len(jkeys) != 2:
                     raise HTTPException(
                         status_code=400,
                         detail="Parallel JSON format must have exactly 2 top-level keys.",
                     )
-                dict_a, dict_b = payload[keys[0]], payload[keys[1]]
+                dict_a, dict_b = payload[jkeys[0]], payload[jkeys[1]]
                 all_ids = sorted(set(dict_a) | set(dict_b))
                 raw_pairs = []
                 for pid in all_ids:
@@ -398,62 +553,78 @@ def _register_batch_routes() -> None:
                 try:
                     img_a = _open_image(url_a)
                     img_b = _open_image(url_b)
-                    pairs.append((pair_id, url_a, url_b, img_a, img_b))
+                    pair_plan.append((pair_id, url_a, url_b, img_a, img_b, None))
                 except Exception as exc:
-                    warnings.append(f"could not fetch pair '{pair_id}': {exc}")
+                    pair_plan.append((pair_id, url_a, url_b, None, None, str(exc)))
         else:
             raise HTTPException(
                 status_code=400,
                 detail="Provide either 'archive' (zip) or 'json_file' field.",
             )
 
-        if not pairs and not warnings:
+        if not pair_plan and not warnings:
             raise HTTPException(status_code=400, detail="No valid pairs found.")
 
-        async def generate() -> AsyncIterator[str]:
-            scores: list[float] = []
-            errors = 0
-            bar = tqdm(total=len(pairs), desc="similarity/batch", unit="pair")
+        loop = asyncio.get_event_loop()
 
-            # emit warnings upfront
+        async def generate() -> AsyncIterator[str]:
+            # emit structural warnings upfront
             for w in warnings:
                 yield json.dumps({"warning": w}, ensure_ascii=False) + "\n"
 
-            for pair_id, label_a, label_b, img_a, img_b in pairs:
-                try:
-                    result = _run_similarity(img_a, img_b, max_size)
-                    score = result["score"]
-                    scores.append(score)
+            # Separate good pairs from decode errors
+            good_indices = [i for i, p in enumerate(pair_plan) if p[5] is None]
+            good_img_pairs = [(pair_plan[i][3], pair_plan[i][4]) for i in good_indices]
+
+            # Run bucketed batch inference in executor — all pairs in one call,
+            # bucketed by spatial size, GPU never blocks the event loop.
+            scores_list: list[float] = []
+            if good_img_pairs:
+                bar = tqdm(total=len(pair_plan), desc="similarity/batch", unit="pair")
+                scores_list = await loop.run_in_executor(
+                    None, _run_similarity_batch, good_img_pairs, max_size
+                )
+                bar.close()
+            else:
+                bar = tqdm(total=0, desc="similarity/batch", unit="pair")
+                bar.close()
+
+            # Stream results in original order
+            all_scores: list[float] = []
+            errors = 0
+            score_iter = iter(scores_list)
+
+            for pair_id, label_a, label_b, _, _, decode_err in pair_plan:
+                if decode_err is not None:
+                    errors += 1
                     line: dict = {
+                        "pair_id": pair_id,
+                        "file_a": label_a,
+                        "file_b": label_b,
+                        "error": decode_err,
+                    }
+                else:
+                    score = next(score_iter)
+                    all_scores.append(score)
+                    line = {
                         "pair_id": pair_id,
                         "file_a": label_a,
                         "file_b": label_b,
                         "score": score,
                     }
-                except Exception as exc:
-                    errors += 1
-                    line = {
-                        "pair_id": pair_id,
-                        "file_a": label_a,
-                        "file_b": label_b,
-                        "error": str(exc),
-                    }
-                bar.update(1)
                 yield json.dumps(line, ensure_ascii=False) + "\n"
-
-            bar.close()
 
             # summary line
             summary: dict = {
                 "summary": True,
-                "total_pairs": len(pairs),
+                "total_pairs": len(pair_plan),
                 "errors": errors,
                 "warnings": len(warnings),
             }
-            if scores:
-                summary["mean_score"] = round(float(np.mean(scores)), 6)
-                summary["min_score"] = round(float(np.min(scores)), 6)
-                summary["max_score"] = round(float(np.max(scores)), 6)
+            if all_scores:
+                summary["mean_score"] = round(float(np.mean(all_scores)), 6)
+                summary["min_score"]  = round(float(np.min(all_scores)),  6)
+                summary["max_score"]  = round(float(np.max(all_scores)),  6)
             yield json.dumps(summary, ensure_ascii=False) + "\n"
 
         return StreamingResponse(
